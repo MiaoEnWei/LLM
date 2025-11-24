@@ -8,21 +8,6 @@ This project evaluates GPT-2 and Llama-2 on medical QA datasets (PubMedQA, MedMC
    ```bash
    pip install -r requirements.txt
    ```
-2. Prepare models:
-    Place base models in ./gpt2 or ./llama2.
-    Place datasets in ./data.
-
-Reproduction Commands (GPT-2 Pipeline)
-1. Train Prompt Tuning
-Train the soft prompts for 1 epoch.
-
-
-## 🛠️ Setup
-
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
    
 2. Prepare models:
     Place base models in ./gpt2 or ./llama2.
@@ -44,7 +29,7 @@ python scripts/train/train_prompt_tuning.py \
   --num_virtual_tokens 10
 ```
 
-Experiment 1: PubMedQA (GPT-2)
+## Experiment 1: PubMedQA (GPT-2)
 1. Train (Prompt Tuning)
 Hyperparameters: Epochs=5, Batch=8, LR=5e-4
 
@@ -76,7 +61,7 @@ python scripts/eval_pubmedqa_gen.py \
   --local_files_only
 ```
 
-Experiment 2: PubMedQA (Llama-2)
+## Experiment 2: PubMedQA (Llama-2)
 Note: Llama-2 evaluation requires FP32 inference to avoid numerical instability (e.g., emoji/gibberish output).
 
 1. Train (Prompt Tuning)
@@ -110,7 +95,7 @@ python scripts/eval_pubmedqa_gen_v2.py \
 ```
 
 
-Experiment 3: MedMCQA (GPT-2)
+## Experiment 3: MedMCQA (GPT-2)
 Commands to reproduce the experiments on the MedMCQA dataset.
 1. Train (Prompt Tuning)
 Hyperparameters: Epochs=1, LR=0.03
@@ -152,7 +137,7 @@ python scripts/eval_zero_shot_fc.py \
   --calib_n 1500 \
   --seed 42
 ```
-Experiment 4: MedMCQA (Llama-2)
+## Experiment 4: MedMCQA (Llama-2)
 Commands for inference and evaluation on MedMCQA using Llama-2.
 
 1. Predict Logits
@@ -192,8 +177,9 @@ python scripts/train/train_prompt_tuning.py \
   --lr 0.03 \
   --num_virtual_tokens 10
 ```
+## PubMedQA:
 
-Experiment 1: PubMedQA (GPT-2)
+## Experiment 1: PubMedQA (GPT-2)
 1. Train (Prompt Tuning)
 Hyperparameters: Epochs=5, Batch=8, LR=5e-4
 
@@ -223,7 +209,7 @@ python scripts/eval_pubmedqa_gen.py \
   --with_decision_acc \
   --local_files_only
 ```
-Experiment 2: PubMedQA (Llama-2)
+## Experiment 2: PubMedQA (Llama-2)
 Note: Llama-2 evaluation requires FP32 inference to avoid numerical instability (e.g., emoji/gibberish output).
 
 1. Train (Prompt Tuning)
@@ -256,8 +242,7 @@ python scripts/eval_pubmedqa_gen_v2.py \
   --percentile 5
 ```
 
-
-Experiment 3: MedMCQA (GPT-2)
+## Experiment 3: MedMCQA (GPT-2)
 Commands to reproduce the experiments on the MedMCQA dataset.
 1. Train (Prompt Tuning)
 Hyperparameters: Epochs=1, LR=0.03
@@ -299,7 +284,7 @@ python scripts/eval_zero_shot_fc.py \
   --calib_n 1500 \
   --seed 42
 ```
-Experiment 4: MedMCQA (Llama-2)
+## Experiment 4: MedMCQA (Llama-2)
 Commands for inference and evaluation on MedMCQA using Llama-2.
 
 1. Predict Logits
