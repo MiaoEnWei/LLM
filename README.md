@@ -30,6 +30,7 @@ Experiment 1: PubMedQA (GPT-2)
 1. Train (Prompt Tuning)
 Hyperparameters: Epochs=5, Batch=8, LR=5e-4
 
+```bash
 python scripts/train/train_prompt_tuning.py \
   --model_name_or_path ./gpt2 \
   --train_file data/official_instruct_pubmedqa/pubmedqa_train.jsonl \
@@ -43,6 +44,7 @@ python scripts/train/train_prompt_tuning.py \
 2. Evaluation (Generation)
 Evaluate ROUGE scores and Decision Consistency.
 
+```bash
 python scripts/eval_pubmedqa_gen.py \
   --parquet data/pubmedqa/data/pqa_labeled_test.parquet \
   --model ./gpt2 \
@@ -60,6 +62,7 @@ Note: Llama-2 evaluation requires FP32 inference to avoid numerical instability 
 1. Train (Prompt Tuning)
 (Example command - adjust batch size based on GPU memory)
 
+```bash
 python scripts/train/train_prompt_tuning.py \
   --model_name_or_path ./llama2 \
   --train_file data/official_instruct_pubmedqa/pubmedqa_train.jsonl \
@@ -73,6 +76,7 @@ python scripts/train/train_prompt_tuning.py \
 2. Evaluation (Enhanced v2 Script)
 Includes automatic report generation with [✅/❌] tags and Delta Ranking analysis.
 
+```bash
 python scripts/eval_pubmedqa_gen_v2.py \
   --parquet data/pubmedqa/data/pqaa_labeled_test.parquet \
   --model ./llama2 \
@@ -91,6 +95,7 @@ Commands to reproduce the experiments on the MedMCQA dataset.
 1. Train (Prompt Tuning)
 Hyperparameters: Epochs=1, LR=0.03
 
+```bash
 python scripts/train/train_prompt_tuning.py \
   --model_name_or_path ./gpt2 \
   --train_file data/official_instruct/medmcqa_train.jsonl \
@@ -103,6 +108,7 @@ python scripts/train/train_prompt_tuning.py \
 
 2. Predict Logits
 
+```bash
 python scripts/predict_logits_lora.py \
   --base_model ./gpt2 \
   --adapter out_gpt2_official_prompt_tuning \
@@ -114,6 +120,7 @@ python scripts/predict_logits_lora.py \
 3. Zero-Shot Evaluation
 Note: Using float32 inference for numerical stability.
 
+```bash
 python scripts/eval_zero_shot_fc.py \
   --model ./gpt2 \
   --adapter out_gpt2_official_prompt_tuning \
@@ -130,6 +137,7 @@ Commands for inference and evaluation on MedMCQA using Llama-2.
 
 1. Predict Logits
 
+```bash
 python scripts/predict_logits_lora.py \
   --base_model ./llama2 \
   --adapter ./out_llama2_official_prompt_tuning \
@@ -141,6 +149,7 @@ python scripts/predict_logits_lora.py \
 2. Zero-Shot Evaluation
 Note: If numerical instability occurs (NaN/Inf), switch --dtype float16 to --dtype float32.
 
+```bash
 python scripts/eval_zero_shot_fc.py \
   --model ./llama2 \
   --adapter ./out_llama2_official_prompt_tuning \
@@ -151,4 +160,3 @@ python scripts/eval_zero_shot_fc.py \
   --device_map auto \
   --calib_n 1500 \
   --seed 42
-
