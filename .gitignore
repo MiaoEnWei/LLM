@@ -1,0 +1,34 @@
+# === 1. 屏蔽大模型权重 ===
+gpt2/
+llama2/
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.onnx
+
+# === 2. 屏蔽所有训练输出 (Adapter) ===
+# 屏蔽所有以 out_ 开头的文件夹
+out_*/
+output/
+# 屏蔽评估结果和日志
+eval_out/
+runs/
+logs/
+*.log
+*.jsonl
+
+# === 3. 屏蔽数据集 ===
+data/
+med_corpus/
+sec_corpus/
+kb/
+*.parquet
+
+# === 4. 屏蔽系统和环境文件 ===
+.venv/
+venv/
+__pycache__/
+.vscode/
+.idea/
+.DS_Store

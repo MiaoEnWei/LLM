@@ -1,0 +1,13 @@
+python3 /home/mew/mev/llm/rag_constrained_qa.py \
+  --model distilgpt2 --device cuda \
+  --corpus_dir /home/mew/mev/llm/sec_corpus \
+  --question "Two-sentence overview of reentrancy and one mitigation." \
+  --answer_prefix "" \
+  --must_include "" --domain_lock_terms "" \
+  --system "What is artificial intelligence? Do not add anything." \
+  --temperature 0.0 --top_p 1.0 \
+  --max_new_tokens 1 \
+  --repetition_penalty 1.4 \
+  --no_repeat_ngram_size 8 \
+  --overlap_min 0 \
+  --skip_number_check

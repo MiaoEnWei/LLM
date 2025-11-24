@@ -1,0 +1,241 @@
+#!/bin/bash
+
+# 激活环境
+source .venv/bin/activate
+#!/bin/bash
+
+# 激活环境
+source .venv/bin/activate
+
+# 设定基础模型路径
+BASE_MODEL="./gpt2"
+RESULTS_LOG="final_benchmark_results.txt"
+
+echo "开始批量评估..." > $RESULTS_LOG
+
+# 循环遍历所有 out_gpt2 开头的文件夹
+for adapter_root in out_gpt2_*; do
+    if [ -d "$adapter_root" ]; then
+        
+        # === 智能路径选择逻辑 ===
+        # 1. 优先检查 'best' 子文件夹
+        if [ -f "$adapter_root/best/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root/best"
+            
+        # 2. 如果没有 best，检查根目录
+        elif [ -f "$adapter_root/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root"
+            
+        # 3. 如果都没有，就跳过
+        else
+            echo "⚠️  跳过: $adapter_root (未找到 adapter_config.json，也不是 best 结构)"
+            continue
+        fi
+        
+        echo "===========================================" | tee -a $RESULTS_LOG
+        echo "正在评估: $final_adapter_path" | tee -a $RESULTS_LOG
+        
+        # 运行评测
+        python scripts/eval_pubmedqa_gen_v2.py \
+            --parquet data/pubmedqa/data/pqaa_labeled_test.parquet \
+            --model $BASE_MODEL \
+            --adapter "./$final_adapter_path" \
+            --limit 200 \
+            --percentile 5 \
+            --local_files_only \
+            --quiet >> $RESULTS_LOG 2>&1
+            
+        echo "✅ 完成: $final_adapter_path"
+    fi
+done
+
+echo "所有评估结束！结果已保存到 $RESULTS_LOG"
+#!/bin/bash
+
+# 激活环境
+source .venv/bin/activate
+
+# 设定基础模型路径
+BASE_MODEL="./gpt2"
+RESULTS_LOG="final_benchmark_results.txt"
+
+echo "开始批量评估..." > $RESULTS_LOG
+
+# 循环遍历所有 out_gpt2 开头的文件夹
+for adapter_root in out_gpt2_*; do
+    if [ -d "$adapter_root" ]; then
+        
+        # === 智能路径选择逻辑 ===
+        # 1. 优先检查 'best' 子文件夹
+        if [ -f "$adapter_root/best/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root/best"
+            
+        # 2. 如果没有 best，检查根目录
+        elif [ -f "$adapter_root/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root"
+            
+        # 3. 如果都没有，就跳过
+        else
+            echo "⚠️  跳过: $adapter_root (未找到 adapter_config.json，也不是 best 结构)"
+            continue
+        fi
+        
+        echo "===========================================" | tee -a $RESULTS_LOG
+        echo "正在评估: $final_adapter_path" | tee -a $RESULTS_LOG
+        
+        # 运行评测
+        python scripts/eval_pubmedqa_gen_v2.py \
+            --parquet data/pubmedqa/data/pqaa_labeled_test.parquet \
+            --model $BASE_MODEL \
+            --adapter "./$final_adapter_path" \
+            --limit 200 \
+            --percentile 5 \
+            --local_files_only \
+            --quiet >> $RESULTS_LOG 2>&1
+            
+        echo "✅ 完成: $final_adapter_path"
+    fi
+done
+
+echo "所有评估结束！结果已保存到 $RESULTS_LOG"
+
+# 设定基础模型路径
+BASE_MODEL="./gpt2"
+RESULTS_LOG="final_benchmark_results.txt"
+
+echo "开始批量评估..." > $RESULTS_LOG
+
+# 循环遍历所有 out_gpt2 开头的文件夹
+for adapter_root in out_gpt2_*; do
+    if [ -d "$adapter_root" ]; then
+        
+        # === 智能路径选择逻辑 ===
+        # 1. 优先检查 'best' 子文件夹
+        if [ -f "$adapter_root/best/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root/best"
+            
+        # 2. 如果没有 best，检查根目录
+        elif [ -f "$adapter_root/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root"
+            
+        # 3. 如果都没有，就跳过
+        else
+            echo "⚠️  跳过: $adapter_root (未找到 adapter_config.json，也不是 best 结构)"
+            continue
+        fi
+        
+        echo "===========================================" | tee -a $RESULTS_LOG
+        echo "正在评估: $final_adapter_path" | tee -a $RESULTS_LOG
+        
+        # 运行评测
+
+
+
+        python scripts/eval_pubmedqa_gen_v2.py \
+            --parquet data/pubmedqa/data/pqaa_labeled_test.parquet \
+            --model $BASE_MODEL \
+            --adapter "./$final_adapter_path" \
+            --limit 200 \
+            --percentile 5 \
+            --local_files_only \
+            --quiet >> $RESULTS_LOG 2>&1
+            
+        echo "✅ 完成: $final_adapter_path"
+    fi
+done
+
+#!/bin/bash
+
+# 激活环境
+source .venv/bin/activate
+
+# 设定基础模型路径
+BASE_MODEL="./gpt2"
+RESULTS_LOG="final_benchmark_results.txt"
+
+echo "开始批量评估..." > $RESULTS_LOG
+
+# 循环遍历所有 out_gpt2 开头的文件夹
+for adapter_root in out_gpt2_*; do
+    if [ -d "$adapter_root" ]; then
+        
+        # === 智能路径选择逻辑 ===
+        # 1. 优先检查 'best' 子文件夹
+        if [ -f "$adapter_root/best/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root/best"
+            
+        # 2. 如果没有 best，检查根目录
+        elif [ -f "$adapter_root/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root"
+            
+        # 3. 如果都没有，就跳过
+        else
+            echo "⚠️  跳过: $adapter_root (未找到 adapter_config.json，也不是 best 结构)"
+            continue
+        fi
+        
+        echo "===========================================" | tee -a $RESULTS_LOG
+        echo "正在评估: $final_adapter_path" | tee -a $RESULTS_LOG
+        
+        # 运行评测
+        python scripts/eval_pubmedqa_gen_v2.py \
+            --parquet data/pubmedqa/data/pqaa_labeled_test.parquet \
+            --model $BASE_MODEL \
+            --adapter "./$final_adapter_path" \
+            --limit 200 \
+            --percentile 5 \
+            --local_files_only \
+            --quiet >> $RESULTS_LOG 2>&1
+            
+        echo "✅ 完成: $final_adapter_path"
+    fi
+done
+
+#!/bin/bash
+
+# 激活环境
+source .venv/bin/activate
+
+# 设定基础模型路径
+BASE_MODEL="./gpt2"
+RESULTS_LOG="final_benchmark_results.txt"
+
+echo "开始批量评估..." > $RESULTS_LOG
+
+# 循环遍历所有 out_gpt2 开头的文件夹
+for adapter_root in out_gpt2_*; do
+    if [ -d "$adapter_root" ]; then
+        
+        # === 智能路径选择逻辑 ===
+        # 1. 优先检查 'best' 子文件夹
+        if [ -f "$adapter_root/best/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root/best"
+            
+        # 2. 如果没有 best，检查根目录
+        elif [ -f "$adapter_root/adapter_config.json" ]; then
+            final_adapter_path="$adapter_root"
+            
+        # 3. 如果都没有，就跳过
+        else
+            echo "⚠️  跳过: $adapter_root (未找到 adapter_config.json，也不是 best 结构)"
+            continue
+        fi
+        
+        echo "===========================================" | tee -a $RESULTS_LOG
+        echo "正在评估: $final_adapter_path" | tee -a $RESULTS_LOG
+        
+        # 运行评测
+        python scripts/eval_pubmedqa_gen_v2.py \
+            --parquet data/pubmedqa/data/pqaa_labeled_test.parquet \
+            --model $BASE_MODEL \
+            --adapter "./$final_adapter_path" \
+            --limit 200 \
+            --percentile 5 \
+            --local_files_only \
+            --quiet >> $RESULTS_LOG 2>&1
+            
+        echo "✅ 完成: $final_adapter_path"
+    fi
+done
+
+echo "所有评估结束！结果已保存到 $RESULTS_LOG"echo "所有评估结束！结果已保存到 $RESULTS_LOG"echo "所有评估结束！结果已
