@@ -1,30 +1,33 @@
-# =========================
+# =========================================================
 # 0) Secrets / Credentials (必须屏蔽)
-# =========================
+# =========================================================
 .env
 .env.*
 *.env
 secrets.*
-**/*secret*
-**/*token*
-**/*key*
 credentials.*
 token.json
 client_secret*.json
+
+# 常见密钥/证书/私钥
+**/*secret*
+**/*token*
+**/*key*
 *.pem
 *.p12
 *.pfx
+*.ppk
 id_rsa
 id_ed25519
-*.ppk
 
-# =========================
-# 1) Models / Weights
-# =========================
+# =========================================================
+# 1) Models / Weights / Checkpoints
+# =========================================================
 gpt2/
 llama2/
 models/
 checkpoints/
+
 *.bin
 *.pt
 *.pth
@@ -33,38 +36,21 @@ checkpoints/
 *.onnx
 *.gguf
 
-# bitsandbytes / transformers cache (可选但建议)
+# transformers / bitsandbytes / HF cache（可选但推荐）
 .cache/
 huggingface/
 hf_cache/
 transformers_cache/
 
-# =========================
-# 2) Outputs / Logs / Runs
-# =========================
-out_*/
-output/
-outputs/
-eval_out*/
-eval_results*/
-runs/
-logs/
-wandb/
-mlruns/
-*.log
-
-# 如果你的 jsonl 基本都是评测输出且含 context/数据片段，保留屏蔽
-*.jsonl
-*.csv
-
-# =========================
-# 3) Data / Index / KB
-# =========================
+# =========================================================
+# 2) Data / KB / Index / Embeddings (通常不上传)
+# =========================================================
 data/
 datasets/
+kb/
 med_corpus/
 sec_corpus/
-kb/
+
 *.parquet
 *.pkl
 *.pickle
@@ -73,7 +59,7 @@ kb/
 *.npz
 *.npy
 
-# FAISS / vector index / retrieval artifacts
+# 向量索引/检索缓存
 *.index
 *.faiss
 *.ann
@@ -82,28 +68,24 @@ vector_store/
 chroma/
 faiss/
 
-# =========================
-# 4) Python / IDE / OS
-# =========================
-.venv/
-venv/
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# RAG 缓存/报告
-rag_cache/
+# =========================================================
+# 3) Outputs / Reports / Logs / Runs (评测产物、日志)
+# =========================================================
+# —— 目录（根目录 & 任意子目录都匹配）
+out_*/
+output/
+outputs/
+eval_out*/
+eval_results*/
+runs/
+logs/
 reports/
+reports_v2/
+wandb/
+mlruns/
+rag_logs/
+kg_cache_*/
 
-# 评测产物（你截图里大多数是这些后缀）
-*.csv
-*.json
-*.txt
-# ===== recursive ignore（关键：匹配任意层级）=====
 **/out_*/
 **/output/
 **/outputs/
@@ -111,16 +93,42 @@ reports/
 **/eval_results*/
 **/runs/
 **/logs/
-**/rag_cache/
 **/reports/
 **/reports_v2/
+**/wandb/
+**/mlruns/
 **/rag_logs/
 **/kg_cache_*/
 
-# 评测产物后缀（任意目录）
+# —— 文件后缀（任意目录）
+*.log
+*.txt
+*.csv
+*.jsonl
+*.json
+
+**/*.log
+**/*.txt
 **/*.csv
 **/*.jsonl
 **/*.json
-**/*.txt
-**/*.log
 
+# =========================================================
+# 4) Notebooks (默认不上传；如要公开，建议放 notebooks_public 并单独放行)
+# =========================================================
+*.ipynb
+**/*.ipynb
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# =========================================================
+# 5) Python / IDE / OS
+# =========================================================
+__pycache__/
+*.pyc
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
