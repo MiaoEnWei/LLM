@@ -92,6 +92,7 @@ def load_eval_items(path:str)->Tuple[List[str], List[str]]:
                     if g is not None:
                         prompts.append(p); gold.append(g)
                     break
+    print(prompts)
     return prompts, gold
 
 # ---------- scoring ----------
