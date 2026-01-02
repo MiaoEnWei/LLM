@@ -103,3 +103,24 @@ reports/
 *.csv
 *.json
 *.txt
+# ===== recursive ignore（关键：匹配任意层级）=====
+**/out_*/
+**/output/
+**/outputs/
+**/eval_out*/
+**/eval_results*/
+**/runs/
+**/logs/
+**/rag_cache/
+**/reports/
+**/reports_v2/
+**/rag_logs/
+**/kg_cache_*/
+
+# 评测产物后缀（任意目录）
+**/*.csv
+**/*.jsonl
+**/*.json
+**/*.txt
+**/*.log
+
