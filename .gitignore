@@ -1,34 +1,96 @@
-# === 1. 屏蔽大模型权重 ===
+# =========================
+# 0) Secrets / Credentials (必须屏蔽)
+# =========================
+.env
+.env.*
+*.env
+secrets.*
+**/*secret*
+**/*token*
+**/*key*
+credentials.*
+token.json
+client_secret*.json
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.ppk
+
+# =========================
+# 1) Models / Weights
+# =========================
 gpt2/
 llama2/
+models/
+checkpoints/
 *.bin
 *.pt
 *.pth
+*.ckpt
 *.safetensors
 *.onnx
+*.gguf
 
-# === 2. 屏蔽所有训练输出 (Adapter) ===
-# 屏蔽所有以 out_ 开头的文件夹
+# bitsandbytes / transformers cache (可选但建议)
+.cache/
+huggingface/
+hf_cache/
+transformers_cache/
+
+# =========================
+# 2) Outputs / Logs / Runs
+# =========================
 out_*/
 output/
-# 屏蔽评估结果和日志
-eval_out/
+outputs/
+eval_out*/
+eval_results*/
 runs/
 logs/
+wandb/
+mlruns/
 *.log
-*.jsonl
 
-# === 3. 屏蔽数据集 ===
+# 如果你的 jsonl 基本都是评测输出且含 context/数据片段，保留屏蔽
+*.jsonl
+*.csv
+
+# =========================
+# 3) Data / Index / KB
+# =========================
 data/
+datasets/
 med_corpus/
 sec_corpus/
 kb/
 *.parquet
+*.pkl
+*.pickle
+*.feather
+*.arrow
+*.npz
+*.npy
 
-# === 4. 屏蔽系统和环境文件 ===
+# FAISS / vector index / retrieval artifacts
+*.index
+*.faiss
+*.ann
+rag_cache/
+vector_store/
+chroma/
+faiss/
+
+# =========================
+# 4) Python / IDE / OS
+# =========================
 .venv/
 venv/
 __pycache__/
+*.pyc
+.ipynb_checkpoints/
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
