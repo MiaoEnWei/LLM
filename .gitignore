@@ -94,3 +94,12 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# RAG 缓存/报告
+rag_cache/
+reports/
+
+# 评测产物（你截图里大多数是这些后缀）
+*.csv
+*.json
+*.txt
