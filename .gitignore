@@ -137,3 +137,8 @@ Thumbs.db
 !.gitignore
 !.gitattributes
 BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext/
+# --- allow notebooks under PrimeKG (override **/*.ipynb) ---
+!PrimeKG/
+!PrimeKG/**
+!PrimeKG/*.ipynb
+
