@@ -132,3 +132,7 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+
+!.gitignore
+!.gitattributes

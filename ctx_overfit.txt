@@ -1,1 +1,0 @@
-Overfitting occurs when a model fits noise or idiosyncrasies in the training data and fails to generalize to new data. Common mitigations include regularization and validation-based early stopping.
