@@ -142,3 +142,6 @@ BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext/
 !PrimeKG/**
 !PrimeKG/*.ipynb
 
+
+# large data
+PrimeKG/kg.csv
