@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# 静默未来空格清理提示
+# Silencesilence FutureWarning about tokenization space cleanup
 warnings.filterwarnings(
     "ignore",
     message="`clean_up_tokenization_spaces` was not set",
@@ -26,7 +26,7 @@ def read_text_file(p: str) -> str:
         t = Path(p).read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return ""
-    # 规范空白：去除 NBSP/BOM
+    # Normalize whitespace: remove NBSP/BOM
     return t.replace("\u00a0", " ").replace("\ufeff", "").strip()
 
 def build_force_words(tok, phrases):
@@ -51,15 +51,15 @@ def main():
 
     ap.add_argument("--question", required=True)
     ap.add_argument("--answer_prefix", default="")
-    ap.add_argument("--second_prefix", default="", help="第二句前缀，如 'Contraindication: '")
+    ap.add_argument("--second_prefix", default="", help="Second-sentence prefix, e.g., 'Contraindication: '")
 
-    # system/hint：可用文本或文件（文件优先）
+    # system/hint: can be provided as text or file (file takes precedence)
     ap.add_argument("--system", default="Answer concisely; prefer the [HINT] when relevant; avoid invented numbers.")
     ap.add_argument("--system_file", default="")
     ap.add_argument("--hint_context", default="")
     ap.add_argument("--hint_file", default="")
 
-    # 采样 & 束搜索
+    # Sampling & beam search
     ap.add_argument("--temperature", type=float, default=0.6)
     ap.add_argument("--top_p", type=float, default=0.9)
     ap.add_argument("--top_k", type=int, default=50)
@@ -68,15 +68,15 @@ def main():
     ap.add_argument("--n_samples", type=int, default=1)
     ap.add_argument("--n_beams", type=int, default=4)
 
-    # 约束：强制短语（逗号分隔）
+    # Constraints: forced phrases (comma-separated)
     ap.add_argument("--force_phrases", default="", help='comma-separated phrases to force, e.g. "active gastrointestinal bleeding"')
 
-    # 其他
-    ap.add_argument("--two_sentences", action="store_true", help="输出裁成恰好两句")
+    # Misc
+    ap.add_argument("--two_sentences", action="store_true", help="Clip output to exactly two sentences")
     ap.add_argument("--show_prompt", action="store_true")
     args = ap.parse_args()
 
-    # 加载模型
+    # Load model
     tok = AutoTokenizer.from_pretrained(args.model, local_files_only=False)
     tok.clean_up_tokenization_spaces = False
     mdl = AutoModelForCausalLM.from_pretrained(args.model, local_files_only=False)
@@ -90,7 +90,7 @@ def main():
     hint_text = read_text_file(args.hint_file) if args.hint_file else args.hint_context
     hint_block = f"\n\n[HINT]\n{hint_text}\n" if hint_text else ""
 
-    # 第二句前缀融入 answer_prefix，作为硬锚
+    # Merge second-sentence prefix into answer_prefix as a hard anchor
     apfx = args.answer_prefix
     if args.second_prefix and (not apfx.endswith(args.second_prefix)):
         apfx = (apfx + args.second_prefix) if apfx else args.second_prefix
@@ -108,7 +108,7 @@ A: {apfx}"""
 
     inputs = tok(prompt, return_tensors="pt").to(device)
 
-    # 生成参数
+    # Generation parameters
     force_list = [s for s in (args.force_phrases.split(",") if args.force_phrases else []) if s.strip()]
     force_words_ids = build_force_words(tok, force_list)
 
@@ -121,14 +121,14 @@ A: {apfx}"""
     )
 
     if force_words_ids:
-        # 束搜索 + 强制短语（最稳）
+        # Beam search + forced phrases (most reliable)
         gen_kwargs.update(dict(
             do_sample=False,
             num_beams=max(1, args.n_beams),
             force_words_ids=force_words_ids,
         ))
     else:
-        # 纯采样（更自然）
+        # Pure sampling (more natural)
         gen_kwargs.update(dict(
             do_sample=True,
             temperature=max(args.temperature, 1e-5),
@@ -138,7 +138,7 @@ A: {apfx}"""
 
     out = mdl.generate(**inputs, **gen_kwargs)
 
-    # 仅取第一条
+    # Take only the first sequence
     seq = out[0] if hasattr(out, "__iter__") else out.sequences[0]
     text = tok.decode(seq, skip_special_tokens=True, clean_up_tokenization_spaces=False)
     pos = text.rfind("\nA:")
@@ -147,11 +147,11 @@ A: {apfx}"""
     if args.two_sentences:
         ans = clip_two_sentences(ans)
 
-    # 兜底：若 second_prefix 在两句内没出现或强制短语没出现 → 构造安全二句
+    # Fallback: if second_prefix is missing within two sentences or forced phrase missing -> construct a safe 2-sentence output
     needs_second = args.two_sentences and (args.second_prefix and args.second_prefix not in ans)
     needs_forced = (force_list and (not any(ph in ans for ph in force_list)))
     if needs_second or needs_forced:
-        # 第一句：尽量保留已生成的第一句，否则从 hint 猜一个机制句
+        # Sentence 1: keep the generated first sentence if possible; otherwise use a generic mechanism sentence from hint
         parts = re.split(r'(?<=[.!?。！？])\s+', ans)
         first = (parts[0].strip() if parts and parts[0].strip() else "").rstrip()
         if not first:

@@ -1,13 +1,13 @@
 """
-PubMedQA 长答案生成评测 (Run-wise Saving) - BERTScore + (可选)决策ACC + 4bit/8bit量化
-- 每次实验创建独立 run 目录，避免覆盖
-- 保存：summary.json / all_results.jsonl / case reports
-- 支持：Base vs Adapter（PEFT）
-- 支持：decision acc（Yes/No/Maybe）可选
-- FIX: limit=1000 仍只有 100：不再对全列 dropna，只对必要列 subset dropna，并打印数量
-- Metric: BERTScore（默认使用 F1 作为逐样本 score 用于显著性分析）
+PubMedQA long-answer generation evaluation (Run-wise Saving) - BERTScore + (optional) decision ACC + 4-bit/8-bit quantization
+- Create an independent run directory for each experiment to avoid overwriting
+- Save: summary.json / all_results.jsonl / case reports
+- Support: Base vs Adapter (PEFT)
+- Support: optional decision acc (Yes/No/Maybe)
+- FIX: limit=1000 but only 100 were used: no longer dropna on all columns; only dropna on required subset columns, and print counts
+- Metric: BERTScore (use F1 as per-sample score by default for significance analysis)
 
-示例（llama2 4bit）：
+Example (llama2 4-bit):
 python scripts/eval_pubmedqa_gen_v3.py \
   --parquet ./data/pubmedqa_hf/pqa_labeled_splits/test.parquet \
   --model ./llama2 \
@@ -31,7 +31,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.utils import logging as hf_logging
 import evaluate
 
-# 检查 PEFT
+# Check PEFT
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
@@ -174,17 +174,17 @@ def save_case_report(
                 diff = s_pt - s_base
 
                 if "Most_Improved" in label:
-                    tag_base = f"❌ Base (Low | {s_base:.4f})"
-                    tag_pt = f"✅ PT   (High| {s_pt:.4f})"
+                    tag_base = f"Base (Low | {s_base:.4f})"
+                    tag_pt = f"PT   (High| {s_pt:.4f})"
                 elif "Most_Degraded" in label:
-                    tag_base = f"✅ Base (High| {s_base:.4f})"
-                    tag_pt = f"❌ PT   (Low | {s_pt:.4f})"
+                    tag_base = f"Base (High| {s_base:.4f})"
+                    tag_pt = f"PT   (Low | {s_pt:.4f})"
                 elif "Both_High" in label:
-                    tag_base = f"✅ Base (High| {s_base:.4f})"
-                    tag_pt = f"✅ PT   (High| {s_pt:.4f})"
+                    tag_base = f"Base (High| {s_base:.4f})"
+                    tag_pt = f"PT   (High| {s_pt:.4f})"
                 else:
-                    tag_base = f"❌ Base (Low | {s_base:.4f})"
-                    tag_pt = f"❌ PT   (Low | {s_pt:.4f})"
+                    tag_base = f"Base (Low | {s_base:.4f})"
+                    tag_pt = f"PT   (Low | {s_pt:.4f})"
 
                 f.write(f"Sample ID : {idx}\n")
                 f.write(f"Question  : {questions[idx]}\n")
@@ -204,7 +204,7 @@ def build_args():
     ap.add_argument("--adapter", default="", help="PEFT adapter path (optional)")
     ap.add_argument("--limit", type=int, default=200, help="Number of samples to eval")
 
-    # 用 --percentile 当 top_k（沿用你原逻辑）
+    # Use --percentile as top_k (keep your original logic)
     ap.add_argument("--percentile", type=int, default=5, help="Top K significant samples")
 
     ap.add_argument("--max_new_tokens", type=int, default=128)
@@ -216,16 +216,16 @@ def build_args():
     ap.add_argument("--local_files_only", action="store_true")
     ap.add_argument("--quiet", action="store_true", help="Silence logs")
 
-    # --- BERTScore 参数 ---
+    # --- BERTScore params ---
     ap.add_argument(
         "--bertscore_model_type",
         default="allenai/scibert_scivocab_uncased",
-        help="BERTScore backbone (biomed推荐SciBERT；也可换 PubMedBERT 等)",
+        help="BERTScore backbone (SciBERT recommended for biomed; can switch to PubMedBERT, etc.)",
     )
     ap.add_argument("--bertscore_batch_size", type=int, default=16, help="BERTScore compute batch size")
     ap.add_argument("--bertscore_rescale", action="store_true", help="BERTScore rescale_with_baseline")
 
-    # --- 量化参数（llama2 建议 4bit）---
+    # --- Quantization params (LLaMA2: 4-bit recommended) ---
     ap.add_argument("--load_in_8bit", action="store_true", help="bitsandbytes 8-bit quantization")
     ap.add_argument("--load_in_4bit", action="store_true", help="bitsandbytes 4-bit quantization (nf4)")
 
@@ -284,8 +284,8 @@ def run_inference(model, tok, questions, ctx_list, args, label="Model", batch_si
 
 def compute_bertscore(preds, refs, args):
     """
-    使用 evaluate 的 bertscore metric。
-    注意：需要 pip install bert_score
+    Use evaluate's bertscore metric.
+    Note: requires `pip install bert_score`
     """
     bertscore = evaluate.load("bertscore")
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -324,7 +324,7 @@ def main():
         hf_logging.set_verbosity_error()
     set_seed(args.seed)
 
-    # ---------- run 目录 ----------
+    # ---------- run directory ----------
     time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_tag = os.path.basename(args.model.rstrip("/"))
     adapter_tag = os.path.basename(args.adapter.rstrip("/")) if args.adapter else "no_adapter"
@@ -340,7 +340,7 @@ def main():
     tbl = pq.read_table(args.parquet)
     df_all = tbl.to_pandas()
 
-    # ===== FIX: 只对必要列 dropna =====
+    # ===== FIX: only dropna on required columns =====
     need_cols = ["question", "long_answer"]
     if args.with_decision_acc and "final_decision" in df_all.columns:
         need_cols.append("final_decision")
@@ -350,7 +350,7 @@ def main():
     after_n = len(df)
     print(f"[Data] total_rows={before_n}, after_dropna(subset={need_cols})={after_n}, args.limit={args.limit}")
     if after_n < args.limit:
-        print(f"[Warn] 过滤后样本数({after_n})小于 limit({args.limit})，说明数据本身可用行不足或 subset 过严。")
+        print(f"[Warn] usable rows after filtering ({after_n}) < limit ({args.limit}); the dataset may not have enough valid rows or the subset is too strict.")
     # =================================
 
     questions = df["question"].astype(str).tolist()
@@ -366,7 +366,7 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    # load base model (支持 4bit/8bit)
+    # load base model (supports 4-bit / 8-bit)
     print(f"Loading Base Model: {args.model} ({qtag}, device_map=auto)")
     loader_kwargs = dict(
         device_map="auto",
@@ -375,7 +375,7 @@ def main():
     )
 
     if args.load_in_4bit and args.load_in_8bit:
-        raise ValueError("不能同时开启 --load_in_4bit 和 --load_in_8bit")
+        raise ValueError("Cannot enable both --load_in_4bit and --load_in_8bit")
 
     if args.load_in_4bit:
         from transformers import BitsAndBytesConfig
@@ -435,7 +435,7 @@ def main():
         output_dir=run_dir,
     )
 
-    # decision acc（可选）
+    # decision acc (optional)
     decision_summary_base = None
     decision_summary_pt = None
     if args.with_decision_acc and "final_decision" in df.columns:

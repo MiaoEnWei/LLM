@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-base="/home/mew/mev/llm/llama2"                       # 改成你的 Llama2 目录
+base="/home/mew/mev/llm/llama2"
 adapter="out_llama2_medmcqa_lora/adapter"
 outdir ="out_llama2_medmcqa_lora/merged"
 

@@ -36,7 +36,7 @@ for adapter_root in out_gpt2_*; do
                 
             echo "✅ 完成: $final_adapter_path"
         else
-            echo "⚠️  跳过: $adapter_root (里里外外都没找到 adapter_config.json，可能训练失败了)"
+            echo "  跳过: $adapter_root (里里外外都没找到 adapter_config.json，可能训练失败了)"
         fi
     fi
 done

@@ -1,11 +1,11 @@
-# /media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/scripts/eval_zero_shot_fc.py
-# 최종版 (V6, no RAG)
-# - 适配 LLaMA-2 / GPT-2 (8-bit / 4-bit / device_map)
-# - 添加 --seed (可复现性)
-# - 添加 5 个正确/오답 예시打印 (误差分析)
-# - 新增 --adapter 参数，可评测 PEFT 模型 (LoRA / Prompt Tuning)
-# - 新增 --limit 参数，只评测前 N 条样本（快速调试）
-# - 新增 --save_jsonl 保存全量预测 (gold/pred/prompt)
+# /LLM/scripts/eval_zero_shot_fc.py
+# Final version (V3, no RAG)
+# - Supports LLaMA-2 / GPT-2 (8-bit / 4-bit / device_map)
+# - Adds --seed (reproducibility)
+# - Prints 5 correct / incorrect examples (error analysis)
+# - Adds --adapter to evaluate PEFT models (LoRA / Prompt Tuning)
+# - Adds --limit to evaluate only the first N samples (fast debugging)
+# - Adds --save_jsonl to save full predictions (gold/pred/prompt)
 
 import argparse
 import json
@@ -20,7 +20,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 LETTERS = "ABCD"
 
-# ---- 新增：PEFT 支持 ----
+# ---- New: PEFT support ----
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
@@ -29,7 +29,7 @@ except ImportError:
 
 
 def set_seed(seed: int):
-    """固定随机种子（可复现）"""
+    """Fix random seeds (reproducibility)."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -42,24 +42,24 @@ def build_args():
     ap.add_argument(
         "--model",
         default="/home/mew/mev/llm/llama2",
-        help="基座模型路径 (e.g., ./gpt2, ./llama2)",
+        help="Base model path (e.g., ./gpt2, ./llama2)",
     )
     ap.add_argument(
         "--adapter",
         default="",
-        help="PEFT 适配器目录 (e.g., ./out_gpt2_official_prompt_tuning)",
+        help="PEFT adapter directory (e.g., ./out_gpt2_official_prompt_tuning)",
     )
     ap.add_argument(
         "--val",
         default="data/official_instruct/medmcqa_validation.jsonl",
-        help="验证集 jsonl 路径",
+        help="Validation set jsonl path",
     )
     ap.add_argument("--max_len", type=int, default=256)
     ap.add_argument(
         "--batch",
         type=int,
         default=24,
-        help="batch size（LLaMA-2: 16~32 比较稳）",
+        help="Batch size (LLaMA-2: 16~32 tends to be stable)",
     )
     ap.add_argument(
         "--dtype",
@@ -70,24 +70,24 @@ def build_args():
         "--calib_n",
         type=int,
         default=1500,
-        help="先验样本数；0=关闭校准",
+        help="Number of samples for prior estimation; 0 = disable calibration",
     )
     ap.add_argument(
         "--device_map",
         default="auto",
         choices=["auto", "cuda", "cpu"],
-        help="auto=分层CPU/GPU（推荐）",
+        help="auto = layered CPU/GPU placement (recommended)",
     )
     ap.add_argument(
         "--load_in_8bit",
         action="store_true",
-        help="bitsandbytes 8-bit 量化以省显存",
+        help="bitsandbytes 8-bit quantization to save VRAM",
     )
-    # ---------- 新增：4-bit 量化 ----------
+    # ---------- New: 4-bit quantization ----------
     ap.add_argument(
         "--load_in_4bit",
         action="store_true",
-        help="bitsandbytes 4-bit 量化（需要安装 bitsandbytes）",
+        help="bitsandbytes 4-bit quantization (requires bitsandbytes installed)",
     )
     # ------------------------------------
 
@@ -95,19 +95,19 @@ def build_args():
         "--seed",
         type=int,
         default=42,
-        help="固定随机种子 (用于可复现性)",
+        help="Fixed random seed (for reproducibility)",
     )
     ap.add_argument(
         "--limit",
         type=int,
         default=0,
-        help="如果 >0，只评测前 N 条验证样本（用于快速调试）",
+        help="If >0, evaluate only the first N validation samples (fast debugging)",
     )
-    # ---------- 新增：保存全量结果 ----------
+    # ---------- New: save full results ----------
     ap.add_argument(
         "--save_jsonl",
         default="",
-        help="如果非空，则把所有样本的 (gold/pred/prompt) 保存到该 JSONL 文件",
+        help="If non-empty, save (gold/pred/prompt) for all samples to this JSONL file",
     )
     # ------------------------------------
     return ap.parse_args()
@@ -339,14 +339,14 @@ def compute_confusion_and_metrics(preds: List[str], gold: List[str], prompts: Li
         row = "  ".join(f"{conf[i][j]:5d}" for j in range(L))
         print(f"{c} | {row}")
 
-    print("\n" + "=" * 20 + " 5 个【答对】的例子 " + "=" * 20)
+    print("\n" + "=" * 20 + " 5 Correct Examples " + "=" * 20)
     for (i, p, g, prompt) in correct_samples:
-        print(f"\n--- [샘플 #{i}] 예측: {p} | 모범 답안: {g} ---")
+        print(f"\n--- [Sample #{i}] Pred: {p} | Gold: {g} ---")
         print(prompt)
 
-    print("\n" + "=" * 20 + " 5 个【答错】的例子 " + "=" * 20)
+    print("\n" + "=" * 20 + " 5 Incorrect Examples " + "=" * 20)
     for (i, p, g, prompt) in wrong_samples:
-        print(f"\n--- [샘플 #{i}] 예측: {p} (오답) | 모범 답안: {g} ---")
+        print(f"\n--- [Sample #{i}] Pred: {p} (Incorrect) | Gold: {g} ---")
         print(prompt)
 
 
@@ -366,15 +366,15 @@ def main():
     set_seed(args.seed)
 
     prompts, gold = load_eval_items(args.val)
-    assert len(prompts) > 0, f"解析到 0 条样本：{args.val}"
+    assert len(prompts) > 0, f"Parsed 0 samples: {args.val}"
 
-    # ------- 新增：limit N 条样本 -------
+    # ------- New: limit to first N samples -------
     if args.limit and args.limit > 0:
         n = min(args.limit, len(prompts))
         prompts = prompts[:n]
         gold = gold[:n]
         print(f"[Eval] Limiting to first {n} validation examples from {args.val}")
-    # ----------------------------------
+    # --------------------------------------------
 
     tok = AutoTokenizer.from_pretrained(args.model, use_fast=True)
     if tok.pad_token is None:
@@ -384,7 +384,7 @@ def main():
     dtype = str2dtype(args.dtype)
     loader_kwargs = dict(torch_dtype=dtype, low_cpu_mem_usage=True)
 
-    # ---- 4-bit / 8-bit 量化配置 ----
+    # ---- 4-bit / 8-bit quantization configuration ----
     if args.load_in_4bit:
         try:
             from transformers import BitsAndBytesConfig
@@ -397,18 +397,20 @@ def main():
             )
             loader_kwargs["quantization_config"] = bnb_config
             if args.device_map != "auto":
-                print("[WARN] 4-bit 量化建议使用 --device_map auto，已强制改为 auto")
+                print("[WARN] 4-bit quantization recommends using --device_map auto; forcing device_map=auto")
                 args.device_map = "auto"
         except Exception as e:
-            raise RuntimeError(f"4-bit 量化需要 transformers>=4.30 且安装 bitsandbytes，当前失败: {e}")
+            raise RuntimeError(
+                f"4-bit quantization requires transformers>=4.30 and bitsandbytes installed. Failure: {e}"
+            )
     elif args.load_in_8bit:
         try:
             from transformers import BitsAndBytesConfig
             loader_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
         except Exception:
-            loader_kwargs["load_in_8bit"] = True  # 旧版兼容
+            loader_kwargs["load_in_8bit"] = True  # backward compatibility
 
-    # ---- 加载基座模型 ----
+    # ---- Load base model ----
     if args.device_map == "auto":
         model = AutoModelForCausalLM.from_pretrained(args.model, device_map="auto", **loader_kwargs).eval()
         dev = pick_first_cuda_device(model)
@@ -420,10 +422,10 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(args.model, **loader_kwargs).eval().to(device)
         dev = device
 
-    # ---- 如果提供了 adapter，则套上 PEFT 适配器 ----
+    # ---- If adapter is provided, apply the PEFT adapter ----
     if args.adapter:
         if not PEFT_AVAILABLE:
-            raise ImportError("检测到 --adapter，但未安装 'peft' 库，请先: pip install peft")
+            raise ImportError("Detected --adapter but 'peft' is not installed. Please run: pip install peft")
         print(f"[eval_zero_shot_fc] Loading PEFT adapter from: {args.adapter}")
         model = PeftModel.from_pretrained(model, args.adapter)
         model.eval()
@@ -432,7 +434,7 @@ def main():
     model.config.use_cache = False
 
     CAND = build_candidates(tok)
-    assert any(len(v) > 0 for v in CAND.values()), f"候选 token 为空：{CAND}"
+    assert any(len(v) > 0 for v in CAND.values()), f"Candidate tokens are empty: {CAND}"
 
     prior = None
     if args.calib_n and args.calib_n > 0:
@@ -456,7 +458,7 @@ def main():
         best = S.argmax(dim=1).tolist()
         preds.extend(LETTERS[k] for k in best)
 
-    # ---------- 新增：保存每条样本的预测结果 ----------
+    # ---------- New: save per-sample predictions ----------
     if args.save_jsonl:
         out_path = args.save_jsonl
         out_dir = os.path.dirname(out_path)
@@ -467,7 +469,7 @@ def main():
                 rec = {"idx": i, "gold": g, "pred": pr, "correct": (pr == g), "prompt": pmt}
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         print(f"[Eval] Saved {len(preds)} records to: {out_path}")
-    # -------------------------------------------------
+    # -----------------------------------------------------
 
     compute_confusion_and_metrics(preds, gold, prompts)
 

@@ -1,11 +1,11 @@
 # scripts/eval_pubmedqa_gen.py
 """
-PubMedQA 长答案生成评测（ROUGE + 可选决策一致性ACC）
-- 从本地 Parquet 读取 pqa_labeled
-- 生成型评测：使用指定 Causal LM（GPT-2 / Llama-2 / -chat）
-- 可选从生成文本中抽取 Yes/No/Maybe 统计决策一致性
-- 支持设定随机种子，尽量保证可复现
-- 支持加载 PEFT 适配器 (--adapter)，例如 Prompt Tuning / LoRA
+PubMedQA long-answer generation evaluation (ROUGE + optional decision consistency ACC)
+- Read pqa_labeled from a local Parquet file
+- Generative evaluation: use a specified Causal LM (GPT-2 / Llama-2 / -chat)
+- Optionally extract Yes/No/Maybe from generated text to compute decision consistency
+- Support setting a random seed to improve reproducibility
+- Support loading a PEFT adapter (--adapter), e.g., Prompt Tuning / LoRA
 """
 
 import os
@@ -22,7 +22,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.utils import logging as hf_logging
 import evaluate
 
-# 尝试导入 peft（用于加载 Prompt Tuning / LoRA 适配器）
+# Try importing peft (for loading Prompt Tuning / LoRA adapters)
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
@@ -40,7 +40,7 @@ TEMPLATE = (
 
 
 def set_seed(seed: int):
-    """尽量做到可复现（CPU/GPU）。"""
+    """Try to make runs reproducible (CPU/GPU)."""
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -58,7 +58,7 @@ def set_seed(seed: int):
 
 
 def join_context(c, max_chars: int) -> str:
-    """把 context 结构拍平为字符串，只取 contexts 字段并裁剪。"""
+    """Flatten the context structure into a string; only take the `contexts` field and truncate."""
     try:
         ctxs = (c or {}).get("contexts", [])
         if not ctxs:
@@ -70,7 +70,7 @@ def join_context(c, max_chars: int) -> str:
 
 
 def build_prompt(tok, use_chat_template: bool, q: str, ctx: str) -> str:
-    """根据是否 chat 模型，构造 prompt。"""
+    """Construct a prompt depending on whether this is a chat model."""
     if use_chat_template and hasattr(tok, "apply_chat_template"):
         msgs = [
             {"role": "system", "content": "You are a helpful biomedical QA assistant."},
@@ -89,8 +89,8 @@ def build_prompt(tok, use_chat_template: bool, q: str, ctx: str) -> str:
 
 def extract_decision(text: str):
     """
-    从生成的长答案末尾尽量抽取 yes/no/maybe（大小写不敏感）。
-    优先匹配句末；若失败，则从全文中取最后一次出现。
+    Try to extract yes/no/maybe from the end of the generated long answer (case-insensitive).
+    Prefer matching at the sentence end; if that fails, take the last occurrence in the full text.
     """
     t = (text or "").strip().lower()
     m = re.search(r"\b(yes|no|maybe)\b\.?$", t)
@@ -101,7 +101,7 @@ def extract_decision(text: str):
 
 
 def decision_metrics(pred_list, gold_list):
-    """给出基础 ACC 和混淆统计（不依赖 sklearn）。"""
+    """Compute basic ACC and confusion statistics (without sklearn)."""
     assert len(pred_list) == len(gold_list)
     valid_idx = [i for i, p in enumerate(pred_list) if p is not None]
     if not valid_idx:
@@ -121,14 +121,14 @@ def decision_metrics(pred_list, gold_list):
 
 
 def one_line(s: str, max_len: int = 300) -> str:
-    """打印示例时，把换行压成一行，方便在终端看。"""
+    """When printing examples, compress newlines into one line for easier terminal viewing."""
     if s is None:
         return ""
     return s[:max_len].replace("\n", " ").strip()
 
 
 def load_model_and_tokenizer(model_path: str, adapter_path: str, local_files_only: bool):
-    """统一加载 base 模型 + 可选 adapter（Prompt Tuning / LoRA）。"""
+    """Load a base model plus an optional adapter (Prompt Tuning / LoRA) in a unified way."""
     print(f"[eval_pubmedqa] Loading tokenizer from {model_path}")
     tok = AutoTokenizer.from_pretrained(
         model_path,
@@ -157,8 +157,8 @@ def load_model_and_tokenizer(model_path: str, adapter_path: str, local_files_onl
     if adapter_path:
         if not PEFT_AVAILABLE:
             raise ImportError(
-                "检测到 --adapter，但当前环境未安装 peft。\n"
-                "请先运行: pip install peft"
+                "Detected --adapter, but peft is not installed in this environment.\n"
+                "Please run: pip install peft"
             )
         print(f"[eval_pubmedqa] Loading PEFT adapter from {adapter_path}")
         model = PeftModel.from_pretrained(
@@ -175,35 +175,35 @@ def load_model_and_tokenizer(model_path: str, adapter_path: str, local_files_onl
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parquet", required=True, help="pqa_labeled 的 parquet 路径")
-    ap.add_argument("--model", required=True, help="HF 模型名或本地权重目录")
-    ap.add_argument("--adapter", default="", help="PEFT 适配器目录 (Prompt Tuning / LoRA)，可留空")
-    ap.add_argument("--use_chat_template", action="store_true", help="对 -chat 模型启用 chat 模板")
-    ap.add_argument("--limit", type=int, default=200, help="评测样本数（从头截取）")
+    ap.add_argument("--parquet", required=True, help="Parquet path for pqa_labeled")
+    ap.add_argument("--model", required=True, help="HF model name or local weights directory")
+    ap.add_argument("--adapter", default="", help="PEFT adapter directory (Prompt Tuning / LoRA), can be empty")
+    ap.add_argument("--use_chat_template", action="store_true", help="Enable chat template for -chat models")
+    ap.add_argument("--limit", type=int, default=200, help="Number of evaluation samples (take from head)")
     ap.add_argument("--max_new_tokens", type=int, default=128)
     ap.add_argument("--max_ctx_chars", type=int, default=4000)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--quiet", action="store_true", help="静默 Transformers 日志")
-    ap.add_argument("--with_decision_acc", action="store_true", help="同时评估结论一致性ACC")
-    ap.add_argument("--local_files_only", action="store_true", help="强制仅使用本地模型/分词器文件")
+    ap.add_argument("--quiet", action="store_true", help="Silence Transformers logs")
+    ap.add_argument("--with_decision_acc", action="store_true", help="Also evaluate decision consistency ACC")
+    ap.add_argument("--local_files_only", action="store_true", help="Force using local model/tokenizer files only")
     args = ap.parse_args()
 
     if args.quiet:
         hf_logging.set_verbosity_error()
 
-    # 随机种子
+    # Random seed
     set_seed(args.seed)
 
-    # 读取 parquet 数据
+    # Read parquet data
     print(f"[eval_pubmedqa] Loading parquet from {args.parquet}")
     tbl = pq.read_table(args.parquet)
     pdf = tbl.to_pandas()
 
-    # 只取有 question / context / long_answer 的行
+    # Keep only rows with question / context / long_answer
     pdf = pdf[["question", "context", "long_answer"]].dropna().head(args.limit)
     pdf["ctx"] = pdf["context"].map(lambda c: join_context(c, args.max_ctx_chars))
 
-    # 加载模型 & tokenizer & adapter
+    # Load model & tokenizer & adapter
     model, tok = load_model_and_tokenizer(
         model_path=args.model,
         adapter_path=args.adapter,
@@ -228,7 +228,7 @@ def main():
             out = model.generate(
                 **inputs,
                 max_new_tokens=args.max_new_tokens,
-                do_sample=False,  # 为了可复现，关闭采样
+                do_sample=False,  # Disable sampling for reproducibility
                 pad_token_id=tok.pad_token_id,
                 eos_token_id=tok.eos_token_id,
             )
@@ -242,14 +242,14 @@ def main():
         if (i + 1) % 20 == 0:
             print(f"[{i+1}/{len(pdf)}]")
 
-    # 计算 ROUGE
+    # Compute ROUGE
     rouge = evaluate.load("rouge")
     rouge_res = rouge.compute(predictions=preds, references=refs)
     rouge_res = {k: float(v) for k, v in rouge_res.items()}
     print("\n=== ROUGE (Aggregated) ===")
     print(json.dumps(rouge_res, indent=2, ensure_ascii=False))
 
-    # -------- 打印 top5 / low5 / median5（按 rougeLsum）--------
+    # -------- Print top5 / low5 / median5 (by rougeLsum) --------
     print("\n[eval_pubmedqa] Computing per-example rougeLsum for ranking...")
     rougeLsum_scores = []
     for pred, ref in zip(preds, refs):
@@ -271,7 +271,7 @@ def main():
 
     top_k = 5
     low5_idx = idx_sorted[:top_k]
-    top5_idx = idx_sorted[-top_k:][::-1]  # 从高到低
+    top5_idx = idx_sorted[-top_k:][::-1]  # High to low
     mid_start = max(0, n // 2 - top_k // 2)
     mid_idx = idx_sorted[mid_start:mid_start + top_k]
 
@@ -279,7 +279,7 @@ def main():
     show_examples("LOW 5", low5_idx)
     show_examples("MEDIAN 5", mid_idx)
 
-    # -------- 决策一致性 (Yes / No / Maybe) --------
+    # -------- Decision consistency (Yes / No / Maybe) --------
     if args.with_decision_acc:
         print("\n[eval_pubmedqa] Evaluating decision consistency (Yes/No/Maybe)...")
         gold_df = tbl.to_pandas()[["final_decision"]].dropna().head(args.limit)
@@ -300,7 +300,7 @@ def main():
             )
         )
 
-    # -------- 保存样例 --------
+    # -------- Save samples --------
     os.makedirs("eval_out", exist_ok=True)
     out_path = "eval_out/pqa_labeled_gen_samples.jsonl"
     with open(out_path, "w", encoding="utf-8") as f:

@@ -1,7 +1,7 @@
 """
-PubMedQA 长答案生成评测 v4 (Final: Scores in Labels)
-- 核心改进：在生成的报告中，将 ROUGE 分数直接显示在模型输出的标签上，对比更直观。
-- 逻辑保持：分差排序 (Delta Ranking)，保证 Case 不会为空。
+PubMedQA long-answer generation evaluation v4 (Final: Scores in Labels)
+- Core improvement: in the generated report, display ROUGE scores directly in the model output labels for more intuitive comparison.
+- Logic preserved: delta ranking (Delta Ranking), ensuring cases will not be empty.
 """
 
 import os
@@ -18,7 +18,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.utils import logging as hf_logging
 import evaluate
 
-# 检查 PEFT
+# Check PEFT
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
@@ -99,7 +99,7 @@ def find_significant_cases(base_scores, pt_scores, top_k=5):
     }
 
 # ==================================================================
-# [修改点] 将具体分数写入 [Label] 中
+# [Change] Write the exact scores into the [Label]
 # ==================================================================
 def save_case_report(case_dict, questions, ctx_list, refs, preds_base, preds_pt, 
                      score_base, score_pt, output_dir="eval_out"):
@@ -121,19 +121,19 @@ def save_case_report(case_dict, questions, ctx_list, refs, preds_base, preds_pt,
                 s_pt = score_pt[idx]
                 diff = s_pt - s_base
                 
-                # 动态生成带分数的标签
+                # Dynamically generate labels with scores
                 if "Most_Improved" in label:
-                    tag_base = f"❌ Base (Low | {s_base:.4f})"
-                    tag_pt   = f"✅ PT   (High| {s_pt:.4f})"
+                    tag_base = f"Base (Low | {s_base:.4f})"
+                    tag_pt   = f"PT   (High| {s_pt:.4f})"
                 elif "Most_Degraded" in label:
-                    tag_base = f"✅ Base (High| {s_base:.4f})"
-                    tag_pt   = f"❌ PT   (Low | {s_pt:.4f})"
+                    tag_base = f"Base (High| {s_base:.4f})"
+                    tag_pt   = f"PT   (Low | {s_pt:.4f})"
                 elif "Both_High" in label:
-                    tag_base = f"✅ Base (High| {s_base:.4f})"
-                    tag_pt   = f"✅ PT   (High| {s_pt:.4f})"
+                    tag_base = f"Base (High| {s_base:.4f})"
+                    tag_pt   = f"PT   (High| {s_pt:.4f})"
                 else: # Both_Low
-                    tag_base = f"❌ Base (Low | {s_base:.4f})"
-                    tag_pt   = f"❌ PT   (Low | {s_pt:.4f})"
+                    tag_base = f"Base (Low | {s_base:.4f})"
+                    tag_pt   = f"PT   (Low | {s_pt:.4f})"
 
                 f.write(f"Sample ID : {idx}\n")
                 f.write(f"Question  : {questions[idx]}\n")
@@ -152,7 +152,7 @@ def build_args():
     ap.add_argument("--adapter", default="", help="PEFT adapter path (optional)")
     ap.add_argument("--limit", type=int, default=200, help="Number of samples to eval")
     
-    # 统一使用 --percentile
+    # Use --percentile consistently
     ap.add_argument("--percentile", type=int, default=5, help="Top K significant samples")
     
     ap.add_argument("--max_new_tokens", type=int, default=128)
@@ -195,8 +195,8 @@ def main():
     if tok.pad_token is None: tok.pad_token = tok.eos_token
     base_model = AutoModelForCausalLM.from_pretrained(
         args.model,
-        dtype=torch.float32,  # <--- 强制改为 float32
-        device_map="auto",    # 显存够的话用 auto，不够可以去掉这行让它默认放 GPU0
+        dtype=torch.float32,  # <--- force float32
+        device_map="auto",    # if VRAM is enough use auto; otherwise remove this line to default to GPU0
         local_files_only=args.local_files_only
     )
     base_model.config.pad_token_id = tok.pad_token_id
@@ -223,7 +223,7 @@ def main():
     scores_base = [float(x) for x in rouge.compute(predictions=preds_base, references=refs, use_aggregator=False)["rougeLsum"]]
     scores_pt = [float(x) for x in rouge.compute(predictions=preds_pt, references=refs, use_aggregator=False)["rougeLsum"]]
 
-    # 使用 args.percentile
+    # Use args.percentile
     k = args.percentile if args.limit >= args.percentile else max(1, args.limit // 2)
     print(f"\nAnalyzing cases (Top {k} significant samples)...")
     case_indices = find_significant_cases(scores_base, scores_pt, top_k=k)

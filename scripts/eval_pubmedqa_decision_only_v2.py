@@ -1,9 +1,9 @@
 """
 PubMedQA decision-only evaluation (Yes / No / Maybe), v2
 
-不用正则从生成文本里抠答案，而是直接：
-- 给定 prompt
-- 看下一个 token 是 "Yes" / "No" / "Maybe" 三个里哪个概率最大
+Instead of extracting the answer from generated text with regex, directly:
+- Given a prompt
+- Look at which of the next tokens "Yes" / "No" / "Maybe" has the highest probability
 """
 
 import argparse
@@ -33,7 +33,7 @@ def set_seed(seed: int):
 
 
 def join_context(c, max_chars: int) -> str:
-    """兼容 dict/list/np.ndarray 的 context 展平"""
+    """Flatten context and be compatible with dict/list/np.ndarray"""
     import numpy as np
 
     if c is None:
@@ -93,10 +93,10 @@ def decision_metrics(pred_list, gold_list):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parquet", required=True, help="pqaa_labeled_test.parquet 路径")
-    ap.add_argument("--model", required=True, help="基座模型路径，如 ./gpt2 或 ./llama2")
-    ap.add_argument("--adapter", default="", help="PEFT 适配器目录，可选")
-    ap.add_argument("--limit", type=int, default=500, help="评测样本数")
+    ap.add_argument("--parquet", required=True, help="Path to pqaa_labeled_test.parquet")
+    ap.add_argument("--model", required=True, help="Base model path, e.g., ./gpt2 or ./llama2")
+    ap.add_argument("--adapter", default="", help="PEFT adapter directory (optional)")
+    ap.add_argument("--limit", type=int, default=500, help="Number of samples to evaluate")
     ap.add_argument("--max_ctx_chars", type=int, default=4000)
     ap.add_argument("--seed", type=int, default=2025)
     ap.add_argument("--quiet", action="store_true")
@@ -108,21 +108,21 @@ def main():
 
     set_seed(args.seed)
 
-    # ---- 数据 ----
+    # ---- Data ----
     tbl = pq.read_table(args.parquet)
     df = tbl.to_pandas()
 
     needed = ["question", "context", "final_decision"]
     for col in needed:
         if col not in df.columns:
-            raise ValueError(f"parquet 缺少列 {col}, 当前列: {list(df.columns)}")
+            raise ValueError(f"Missing column {col} in parquet. Current columns: {list(df.columns)}")
 
     df = df[needed].dropna().head(args.limit)
     questions = df["question"].tolist()
     ctx_list = [join_context(c, args.max_ctx_chars) for c in df["context"].tolist()]
     gold_decisions = [normalize_decision(x) for x in df["final_decision"].tolist()]
 
-    # ---- 模型 ----
+    # ---- Model ----
     print(f"[DecisionEval-v2] Loading tokenizer from: {args.model}")
     tok = AutoTokenizer.from_pretrained(
         args.model, use_fast=True, local_files_only=args.local_files_only
@@ -142,7 +142,7 @@ def main():
 
     if args.adapter:
         if not PEFT_AVAILABLE:
-            raise ImportError("指定了 --adapter，但当前环境未安装 peft")
+            raise ImportError("You specified --adapter, but peft is not installed in the current environment")
         print(f"[DecisionEval-v2] Loading PEFT adapter from: {args.adapter}")
         model = PeftModel.from_pretrained(
             model,
@@ -152,13 +152,13 @@ def main():
 
     model.eval()
 
-    # 预先算出三个 label 的 token id（注意前面加空格）
+    # Precompute token ids for the three labels (note the leading space)
     label_tokens = {}
     for lab in ["yes", "no", "maybe"]:
-        # 对 GPT-2/llama 都习惯用前导空格
+        # For GPT-2/LLaMA it's common to include a leading space
         ids = tok(" " + lab.capitalize(), add_special_tokens=False)["input_ids"]
         if len(ids) != 1:
-            # 如果被切成多个 token，就取第一个，简单近似
+            # If split into multiple tokens, take the first one as a simple approximation
             label_tokens[lab] = ids[0]
         else:
             label_tokens[lab] = ids[0]
@@ -166,7 +166,7 @@ def main():
     preds = []
     all_scores = []
 
-    # ---- 逐样本打分 ----
+    # ---- Score per sample ----
     for i, (q, ctx) in enumerate(zip(questions, ctx_list)):
         prompt = build_prompt(q, ctx)
         inputs = tok(prompt, return_tensors="pt")
@@ -174,12 +174,12 @@ def main():
 
         with torch.no_grad():
             out = model(**inputs)
-            logits = out.logits[0, -1, :]  # 最后一个位置
+            logits = out.logits[0, -1, :]  # last position
 
         scores = {}
         for lab, tid in label_tokens.items():
             scores[lab] = float(logits[tid].item())
-        # 选 logit 最大的 label
+        # Pick the label with the largest logit
         pred_lab = max(scores.items(), key=lambda x: x[1])[0]
         preds.append(pred_lab)
         all_scores.append(scores)
@@ -187,7 +187,7 @@ def main():
         if (i + 1) % 20 == 0:
             print(f"[DecisionEval-v2] {i+1}/{len(df)}")
 
-    # ---- 计算指标 ----
+    # ---- Metrics ----
     dec_res = decision_metrics(preds, gold_decisions)
 
     print("\n=== PubMedQA Decision-only Evaluation v2 (logit 3-class) ===")
@@ -203,7 +203,7 @@ def main():
         )
     )
 
-    # ---- 可选：保存详细预测 ----
+    # ---- Optional: save detailed predictions ----
     os.makedirs("eval_out", exist_ok=True)
     out_path = "eval_out/pqaa_decision_only_logits_preds.jsonl"
     with open(out_path, "w", encoding="utf-8") as f:

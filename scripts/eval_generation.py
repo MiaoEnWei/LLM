@@ -4,35 +4,35 @@ import os
 import torch
 import numpy as np
 import faiss
-import argparse  # <--- 新增：命令行参数解析
+import argparse  # <--- Added: command-line argument parsing
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 from datasets import load_dataset
 
-# ================= 命令行参数解析 =================
+# ================= Command-line argument parsing =================
 parser = argparse.ArgumentParser()
-parser.add_argument("--model_path", type=str, default="./gpt2-medmcqa-raft-masked", help="模型路径")
-parser.add_argument("--no_rag", action="store_true", help="如果加上这个参数，就关闭 RAG")
-parser.add_argument("--output_file", type=str, default="eval_result.jsonl", help="输出文件名")
+parser.add_argument("--model_path", type=str, default="./gpt2-medmcqa-raft-masked", help="Model path")
+parser.add_argument("--no_rag", action="store_true", help="If this flag is set, disable RAG")
+parser.add_argument("--output_file", type=str, default="eval_result.jsonl", help="Output file name")
 args = parser.parse_args()
 
-# ================= 配置 =================
+# ================= Configuration =================
 MODEL_PATH = args.model_path
 SAVE_FILE = args.output_file
-# 逻辑反转：如果命令行加了 --no_rag，则 USE_RAG 为 False
+# Logic inversion: if --no_rag is provided, then USE_RAG is False
 USE_RAG = not args.no_rag 
 
-MEDMCQA_FILE = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/data/medmcqa/dev.json"
+MEDMCQA_FILE = "/LLM/data/medmcqa/dev.json"
 EMBED_MODEL_NAME = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"{'='*40}")
 print(f"  MODEL: {MODEL_PATH}")
-print(f"  RAG STATUS: {'✅ ON' if USE_RAG else '🚫 OFF (Pure Context)'}")
+print(f"  RAG STATUS: {'ON' if USE_RAG else 'OFF (Pure Context)'}")
 print(f"  OUTPUT: {SAVE_FILE}")
 print(f"{'='*40}")
 
-# ================= 1. 加载模型 =================
+# ================= 1. Load model =================
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Model path not found: {MODEL_PATH}")
 
@@ -44,7 +44,7 @@ model = AutoModelForCausalLM.from_pretrained(MODEL_PATH)
 model.to(DEVICE)
 model.eval()
 
-# ================= 2. 初始化 RAG (仅当 USE_RAG=True) =================
+# ================= 2. Initialize RAG (only when USE_RAG=True) =================
 rag_index = None
 rag_docs = []
 embed_tokenizer = None
@@ -83,7 +83,7 @@ if USE_RAG:
 
 def get_rag_context(question):
     if not USE_RAG: 
-        return "" # 如果 RAG 关闭，直接返回空字符串
+        return "" # If RAG is disabled, return an empty string directly
         
     inputs = embed_tokenizer(question, return_tensors="pt", padding=True, truncation=True, max_length=128).to(DEVICE)
     with torch.no_grad():
@@ -96,7 +96,7 @@ def get_rag_context(question):
             ctx += f"Ref: {rag_docs[idx][:300]}\n"
     return ctx[:600]
 
-# ================= 3. 评估逻辑 =================
+# ================= 3. Evaluation logic =================
 def format_prompt(item, context=""):
     q = item['question']
     opts = f"A) {item.get('opa','')}\nB) {item.get('opb','')}\nC) {item.get('opc','')}\nD) {item.get('opd','')}"
@@ -121,7 +121,7 @@ ans_map = {
 for i, line in enumerate(tqdm(lines)):
     item = json.loads(line)
     
-    # 答案解析
+    # Answer parsing
     cop = item.get('cop')
     cop_str = str(cop).strip().lower()
     ground_truth = ans_map.get(cop_str)
@@ -133,7 +133,7 @@ for i, line in enumerate(tqdm(lines)):
         bad_labels += 1
         continue
 
-    # 这里的 ctx 会根据 USE_RAG 自动变为空或实际内容
+    # ctx will automatically become empty or actual content depending on USE_RAG
     ctx = get_rag_context(item['question'])
     prompt = format_prompt(item, context=ctx)
     
@@ -150,7 +150,7 @@ for i, line in enumerate(tqdm(lines)):
         correct += 1
     total += 1
     
-    # 保存
+    # Save
     record = {"id": i, "gold": ground_truth, "pred": pred_char, "correct": (pred_char == ground_truth)}
     f_out.write(json.dumps(record) + "\n")
     
@@ -160,7 +160,7 @@ for i, line in enumerate(tqdm(lines)):
 f_out.close()
 
 print(f"\n{'='*30}")
-print(f"Mode: {'✅ With RAG' if USE_RAG else '🚫 No RAG'}")
+print(f"Mode: {'With RAG' if USE_RAG else 'No RAG'}")
 print(f"Correct: {correct} / {total}")
 print(f"Accuracy: {correct/total:.2%}")
 print(f"{'='*30}")

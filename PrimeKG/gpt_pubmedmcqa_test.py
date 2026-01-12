@@ -10,8 +10,8 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 
 # [Configuration Area] Please modify variables below according to your actual paths
-GPT2_PATH           = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/gpt2"
-MEDMCQA_FILE        = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/data/medmcqa/dev.json"
+GPT2_PATH           = "/LLM/gpt2"
+MEDMCQA_FILE        = "/LLM/data/medmcqa/dev.json"
 
 # Knowledge Base File Paths (Ensure these files are in the current directory, or use absolute paths)
 FAISS_INDEX_PATH    = "pubmed_qa.index"

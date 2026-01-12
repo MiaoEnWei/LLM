@@ -11,10 +11,10 @@ from transformers import (
 )
 from datasets import load_dataset
 
-# ================= 配置 =================
-MODEL_NAME = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/gpt2"
-TRAIN_FILE = "./data/medmcqa_raft_train.json" # 确保这个文件还在
-OUTPUT_DIR = "./gpt2-medmcqa-raft-masked"     # 新的输出目录
+# ================= Configuration =================
+MODEL_NAME = "/LLM/gpt2"
+TRAIN_FILE = "./data/medmcqa_raft_train.json" # Make sure this file still exists
+OUTPUT_DIR = "./gpt2-medmcqa-raft-masked"     # New output directory
 MAX_LENGTH = 768
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -22,8 +22,8 @@ if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 def format_and_mask(example):
-    # 1. 准备文本
-    ctx = example.get('context', '')[:500] # 截断
+    # 1. Prepare text
+    ctx = example.get('context', '')[:500] # Truncate
     q = example.get('question', '')
     opts = f"A) {example.get('opa', '')}\nB) {example.get('opb', '')}\nC) {example.get('opc', '')}\nD) {example.get('opd', '')}"
     
@@ -38,12 +38,12 @@ def format_and_mask(example):
     if not ans_char:
         return None
 
-    # 2. 构造 Prompt 的两部分
-    # Part A: 提示部分 (Context + Question + Options + "Answer:")
+    # 2. Construct the two parts of the prompt
+    # Part A: Instruction portion (Context + Question + Options + "Answer:")
     prompt_text = f"Context:\n{ctx}\nQuestion: {q}\n{opts}\nAnswer:"
     
-    # Part B: 答案部分 ( " A <eos>")
-    # 注意：在 Answer: 后面加个空格，符合 GPT 分词习惯
+    # Part B: Answer portion (" A <eos>")
+    # Note: add a space after "Answer:" to match GPT tokenization habits
     answer_text = f" {ans_char}{tokenizer.eos_token}"
     
     full_text = prompt_text + answer_text
@@ -51,22 +51,23 @@ def format_and_mask(example):
     # 3. Tokenize
     encodings = tokenizer(full_text, truncation=True, max_length=MAX_LENGTH, padding="max_length")
     
-    # 4. 制作 Labels (关键步骤！)
+    # 4. Build Labels (key step!)
     input_ids = encodings['input_ids']
-    labels = list(input_ids) # 复制一份
+    labels = list(input_ids) # Make a copy
     
-    # 找到 prompt_text 的长度 (大概位置)
-    # 这种方法虽然笨但最稳：先 encode prompt 部分，看有多长
+    # Find the length of prompt_text (approximate position)
+    # This method is clunky but most reliable: encode the prompt part first and measure its length
     prompt_enc = tokenizer(prompt_text, truncation=True, max_length=MAX_LENGTH)
     prompt_len = len(prompt_enc['input_ids'])
     
-    # 将 prompt 部分的 labels 设为 -100 (忽略 Loss)
-    # 这样模型只会被惩罚预测错"答案"的时候，这就强迫它必须利用 Context 来推导答案
+    # Set labels of the prompt part to -100 (ignore loss)
+    # This way the model is only penalized for predicting the "answer" part incorrectly,
+    # which forces it to leverage the Context to derive the answer.
     for i in range(len(labels)):
         if i < prompt_len:
             labels[i] = -100
         else:
-            # 保持原样 (即 Answer 部分)
+            # Keep original labels (i.e., the Answer part)
             pass
             
     encodings['labels'] = labels

@@ -9,9 +9,9 @@ def extract_letter(txt: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, help="HF 模型或本地权重路径")
+    ap.add_argument("--model", required=True, help="HF model name or local checkpoint path")
     ap.add_argument("--infile", required=True, help="data/infer/..._prompts.jsonl")
-    ap.add_argument("--outfile", required=True, help="输出预测 jsonl")
+    ap.add_argument("--outfile", required=True, help="output prediction jsonl")
     ap.add_argument("--max_new_tokens", type=int, default=4)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--top_p", type=float, default=1.0)
@@ -28,7 +28,7 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    # 读取 prompts
+    # Read prompts
     prompts = []
     with open(args.infile, "r", encoding="utf-8") as f:
         for line in f:
@@ -55,7 +55,7 @@ def main():
                 pad_token_id=tok.pad_token_id,
                 eos_token_id=tok.eos_token_id,
             )
-        # 取“新增的”文本
+        # Take only the "newly generated" text
         new_tokens = out[:, enc["input_ids"].shape[1]:]
         texts = tok.batch_decode(new_tokens, skip_special_tokens=True)
 

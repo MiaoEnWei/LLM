@@ -1,10 +1,10 @@
 # scripts/compare_rag_effect.py
 import json
 
-# 请替换成你实际保存的两个结果文件
-# 文件 A: 纯微调的结果 (或者 RAFT 关闭 RAG 的结果)
-FILE_NO_RAG = "eval_gen_results_no_rag.jsonl" # 假设你有这个
-# 文件 B: RAFT 开启 RAG 的结果
+# Please replace these with the two result files you actually saved
+# File A: results from pure fine-tuning (or RAFT results with RAG turned off)
+FILE_NO_RAG = "eval_gen_results_no_rag.jsonl" # e.g., assume you have this file
+# File B: RAFT results with RAG turned on
 FILE_WITH_RAG = "raft_eval_results.jsonl"
 
 def load_results(path):
@@ -32,7 +32,7 @@ def compare():
     rag_helped = 0
     rag_hurt = 0
     
-    # 遍历共同的 ID
+    # Iterate over common IDs
     common_ids = sorted(list(set(res_a.keys()) & set(res_b.keys())))
     
     print(f"{'ID':<6} | {'Gold':<4} | {'NoRAG':<5} -> {'WithRAG':<7} | {'Result'}")
@@ -44,30 +44,30 @@ def compare():
         
         pred_a = a['pred']
         pred_b = b['pred']
-        gold = a['gold'] # 假设 gold 是一样的
+        gold = a['gold'] # assume gold is the same
         
         if pred_a != pred_b:
             total_changed += 1
             status = ""
             
             if pred_a != gold and pred_b == gold:
-                status = "✅ FIXED"
+                status = "FIXED"
                 rag_helped += 1
             elif pred_a == gold and pred_b != gold:
-                status = "❌ BROKE"
+                status = "BROKE"
                 rag_hurt += 1
             else:
-                status = "🔄 CHANGED (Both Wrong)"
+                status = "CHANGED (Both Wrong)"
             
-            # 打印前 20 个变化的例子
+            # Print only the first 20 changed examples
             if total_changed <= 20:
                 print(f"{idx:<6} | {gold:<4} | {pred_a:<5} -> {pred_b:<7} | {status}")
 
     print("-" * 50)
-    print(f"Total Changed Predictions: {total_changed}")
-    print(f"RAG Helped (Fixed): {rag_helped}")
-    print(f"RAG Hurt (Broke):   {rag_hurt}")
-    print(f"Net Improvement:    {rag_helped - rag_hurt}")
+    print(f"Total changed predictions: {total_changed}")
+    print(f"RAG helped (Fixed): {rag_helped}")
+    print(f"RAG hurt (Broke):   {rag_hurt}")
+    print(f"Net improvement:    {rag_helped - rag_hurt}")
 
 if __name__ == "__main__":
     import os

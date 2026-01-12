@@ -1,8 +1,8 @@
 # scripts/eval_zero_shot_rag.py
-# 最终版 (V7):
-# - 包含 V6 所有功能 (LLaMA-2/GPT-2, 8-bit, Adapter, 误差分析)
-# - 新增 RAG 支持: 集成 FAISS + PubMedBERT 检索
-# - 显存优化: 先批量检索修改 Prompt，释放 RAG 模型后再加载 LLM
+# Final version (V2):
+# - Includes all V6 features (LLaMA-2/GPT-2, 8-bit, Adapter, error analysis)
+# - Adds RAG support: integrates FAISS + PubMedBERT retrieval
+# - VRAM optimization: retrieve in batches and modify prompts first, then free the RAG model and load the LLM
 
 import argparse, json, re, os, sys, pickle, gc
 import random
@@ -14,14 +14,14 @@ from tqdm import tqdm
 
 LETTERS = "ABCD"
 
-# ---- 新增：PEFT 支持 ----
+# ---- New: PEFT support ----
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
 except ImportError:
     PEFT_AVAILABLE = False
 
-# ---- 新增：FAISS 支持 ----
+# ---- New: FAISS support ----
 try:
     import faiss
     FAISS_AVAILABLE = True
@@ -30,7 +30,7 @@ except ImportError:
 
 
 def set_seed(seed: int):
-    """一个辅助函数，用来固定所有随机种子"""
+    """A helper function to fix all random seeds."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -40,28 +40,28 @@ def set_seed(seed: int):
 
 def build_args():
     ap = argparse.ArgumentParser()
-    # --- 模型相关 ---
-    ap.add_argument("--model", default="/home/mew/mev/llm/llama2", help="基座模型路径")
-    ap.add_argument("--adapter", default="", help="PEFT 适配器目录 (可选)")
+    # --- Model-related ---
+    ap.add_argument("--model", default="/home/mew/mev/llm/llama2", help="Base model path")
+    ap.add_argument("--adapter", default="", help="PEFT adapter directory (optional)")
     ap.add_argument("--device_map", default="auto", choices=["auto", "cuda", "cpu"])
-    ap.add_argument("--load_in_8bit", action="store_true", help="8-bit 量化")
-    ap.add_argument("--load_in_4bit", action="store_true", help="4-bit 量化")
+    ap.add_argument("--load_in_8bit", action="store_true", help="8-bit quantization")
+    ap.add_argument("--load_in_4bit", action="store_true", help="4-bit quantization")
     
-    # --- 数据与评测相关 ---
-    ap.add_argument("--val", default="data/official_instruct/medmcqa_validation.jsonl", help="验证集路径")
-    ap.add_argument("--max_len", type=int, default=512, help="最大序列长度 (RAG需要更长)")
+    # --- Data & evaluation ---
+    ap.add_argument("--val", default="data/official_instruct/medmcqa_validation.jsonl", help="Validation set path")
+    ap.add_argument("--max_len", type=int, default=512, help="Max sequence length (RAG needs longer)")
     ap.add_argument("--batch", type=int, default=24)
     ap.add_argument("--dtype", default="float16", choices=["auto", "float16", "bfloat16", "float32"])
-    ap.add_argument("--calib_n", type=int, default=1500, help="校准样本数")
+    ap.add_argument("--calib_n", type=int, default=1500, help="Number of samples for calibration")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--limit", type=int, default=0, help="只评测前 N 条")
-    ap.add_argument("--save_jsonl", default="", help="结果保存路径")
+    ap.add_argument("--limit", type=int, default=0, help="Evaluate only the first N items")
+    ap.add_argument("--save_jsonl", default="", help="Path to save results")
 
-    # --- RAG 相关参数 ---
-    ap.add_argument("--rag_index", default="", help="FAISS index 路径 (.index)")
-    ap.add_argument("--rag_docs", default="", help="文档库路径 (.pkl)")
-    ap.add_argument("--rag_model", default="Microsoft/PubMedBERT-base-uncased-abstract-fulltext", help="Embedding 模型路径")
-    ap.add_argument("--rag_k", type=int, default=3, help="检索 Top-K 文档")
+    # --- RAG parameters ---
+    ap.add_argument("--rag_index", default="", help="FAISS index path (.index)")
+    ap.add_argument("--rag_docs", default="", help="Document store path (.pkl)")
+    ap.add_argument("--rag_model", default="Microsoft/PubMedBERT-base-uncased-abstract-fulltext", help="Embedding model path")
+    ap.add_argument("--rag_k", type=int, default=3, help="Retrieve Top-K documents")
 
     return ap.parse_args()
 
@@ -77,18 +77,23 @@ def str2dtype(x: str):
 # ---------- Prompt Parsing ----------
 
 def cop_to_letter(v) -> Optional[str]:
-    if v is None: return None
+    if v is None:
+        return None
     s = str(v).strip()
-    if s.upper() in LETTERS: return s.upper()
+    if s.upper() in LETTERS:
+        return s.upper()
     if s.isdigit():
         k = int(s)
-        if 1 <= k <= 4: return LETTERS[k - 1]
-        if 0 <= k <= 3: return LETTERS[k]
+        if 1 <= k <= 4:
+            return LETTERS[k - 1]
+        if 0 <= k <= 3:
+            return LETTERS[k]
     return None
 
 def normalize_answer_prompt(prompt: str) -> str:
     tail = "Answer (A, B, C, or D): "
-    if not isinstance(prompt, str): return tail
+    if not isinstance(prompt, str):
+        return tail
     s = prompt.rstrip("\n")
     low = s.lower()
     i = low.rfind("answer")
@@ -99,12 +104,13 @@ def normalize_answer_prompt(prompt: str) -> str:
     return s + tail
 
 def parse_medmcqa(o: Dict) -> Optional[Tuple[str, Optional[str], str]]:
-    # 返回: (Prompt, Gold, Raw_Question)
+    # Returns: (Prompt, Gold, Raw_Question)
     q, a, b, c, d = o.get("question"), o.get("opa"), o.get("opb"), o.get("opc"), o.get("opd")
-    if not all(isinstance(x, str) for x in [q, a, b, c, d]): return None
+    if not all(isinstance(x, str) for x in [q, a, b, c, d]):
+        return None
     cop = cop_to_letter(o.get("cop"))
     
-    # 原始 Prompt 格式
+    # Original prompt format
     body = (
         "You are a medical exam solver. Choose the single best option and reply with only one letter.\n"
         f"Question: {q}\nA) {a}\nB) {b}\nC) {c}\nD) {d}\n"
@@ -116,9 +122,10 @@ def load_eval_items(path: str) -> Tuple[List[str], List[str], List[str]]:
     prompts, gold, raw_questions = [], [], []
     with open(path, encoding="utf-8") as f:
         for line in f:
-            if not line.strip(): continue
+            if not line.strip():
+                continue
             o = json.loads(line)
-            # 这里简化逻辑，假设主要是 MedMCQA 格式，如果是其他格式需自行适配提取 Question 逻辑
+            # Simplified: assume MedMCQA format primarily; adapt if other formats require custom question extraction
             r = parse_medmcqa(o)
             if r is not None:
                 p, g, q = r
@@ -137,7 +144,7 @@ class RAGRetriever:
         
         print(f"[RAG] Loading Documents: {docs_path}")
         with open(docs_path, "rb") as f:
-            self.docs = pickle.load(f) # 假设是一个 list 或 dict
+            self.docs = pickle.load(f)  # Assume a list or dict
             
         print(f"[RAG] Loading Embedding Model: {model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -147,10 +154,16 @@ class RAGRetriever:
 
     @torch.inference_mode()
     def embed_queries(self, texts: List[str]):
-        # PubMedBERT Mean Pooling or CLS. 这里使用 CLS (HuggingFace 默认 output[0][:,0])
-        inputs = self.tokenizer(texts, padding=True, truncation=True, max_length=128, return_tensors="pt").to(self.device)
+        # PubMedBERT pooling: use CLS here (HF default output[0][:,0])
+        inputs = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=128,
+            return_tensors="pt",
+        ).to(self.device)
         outputs = self.model(**inputs)
-        # 取 CLS token embedding
+        # Take CLS token embedding
         embeddings = outputs.last_hidden_state[:, 0, :]
         return embeddings.cpu().numpy()
 
@@ -170,24 +183,24 @@ class RAGRetriever:
                 context_texts = []
                 for idx in idxs:
                     if idx < len(self.docs):
-                        # 假设 docs 是个 list，如果 docs 是 dict，需改为 self.docs[idx]
-                        # 有些 pkl 存的是 {'title':..., 'text':...}
+                        # Assume docs is a list; if docs is a dict, change to self.docs[idx]
+                        # Some PKLs store dicts like {'title':..., 'text':...}
                         doc_content = self.docs[idx]
                         if isinstance(doc_content, dict):
-                            txt = doc_content.get('text', str(doc_content))
+                            txt = doc_content.get("text", str(doc_content))
                         else:
                             txt = str(doc_content)
                         context_texts.append(txt)
                 
-                # 拼接 Context 到 Prompt
-                # 格式: Context: ... \n\n You are a medical exam solver...
+                # Concatenate context into the prompt
+                # Format: Context: ... \n\n You are a medical exam solver...
                 joined_ctx = "\n".join([f"- {t}" for t in context_texts])
                 new_prompt = f"Context:\n{joined_ctx}\n\n{orig_prompt}"
                 new_prompts.append(new_prompt)
                 
         return new_prompts
 
-# ---------- Scoring & Metrics (与原版一致，略微精简) ----------
+# ---------- Scoring & Metrics (same as original, slightly simplified) ----------
 
 def single_token_id(tok, s: str) -> Optional[int]:
     ids = tok.encode(s, add_special_tokens=False)
@@ -201,7 +214,7 @@ def build_candidates(tok) -> Dict[str, List[int]]:
 
 @torch.inference_mode()
 def last_logprobs(model, tok, texts: List[str], max_len: int, dev: torch.device):
-    # 注意：RAG 后 prompt 会变长，需要适当增加 max_len
+    # Note: RAG makes prompts longer, so increase max_len as needed
     enc = tok(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_len)
     enc = {k: v.to(dev) for k, v in enc.items()}
     logits = model(**enc).logits[:, -1, :]
@@ -214,20 +227,23 @@ def estimate_prior(model, tok, texts, max_len, cand, batch, dev):
         lp = last_logprobs(model, tok, texts[i : i + batch], max_len, dev)
         for ch in LETTERS:
             idx = cand[ch]
-            if not idx: s[ch].append(torch.full((lp.size(0),), -1e9, device=lp.device))
-            else: s[ch].append(torch.logsumexp(torch.stack([lp[:, j] for j in idx], dim=1), dim=1))
+            if not idx:
+                s[ch].append(torch.full((lp.size(0),), -1e9, device=lp.device))
+            else:
+                s[ch].append(torch.logsumexp(torch.stack([lp[:, j] for j in idx], dim=1), dim=1))
     pri = {}
-    for ch in LETTERS: pri[ch] = torch.cat(s[ch], dim=0).mean().item()
+    for ch in LETTERS:
+        pri[ch] = torch.cat(s[ch], dim=0).mean().item()
     return pri
 
 def compute_confusion_and_metrics(preds, gold, prompts):
-    # ... (保持原有的 metric 计算代码不变，篇幅原因省略详细打印，功能相同) ...
+    # ... (keep the original metric computation; detailed printing is omitted for brevity but functionality is the same) ...
     labels = list(LETTERS)
     correct = sum(1 for p, g in zip(preds, gold) if p == g)
     acc = correct / len(gold) if gold else 0
     print(f"\n=== Result ===\nACC: {acc:.4f} ({correct}/{len(gold)})")
     
-    # 打印几个例子
+    # Print a few examples
     print("\n--- Example ---")
     print(f"Prompt (Truncated): {prompts[0][-200:]}")
     print(f"Pred: {preds[0]}, Gold: {gold[0]}")
@@ -248,35 +264,36 @@ def main():
     args = build_args()
     set_seed(args.seed)
 
-    # 1. 加载数据
+    # 1. Load data
     prompts, gold, raw_questions = load_eval_items(args.val)
     if args.limit > 0:
         prompts, gold, raw_questions = prompts[:args.limit], gold[:args.limit], raw_questions[:args.limit]
     
     print(f"[Data] Loaded {len(prompts)} examples.")
 
-    # 2. 如果启用了 RAG，先进行检索并修改 Prompt
+    # 2. If RAG is enabled, retrieve first and modify prompts
     if args.rag_index and args.rag_docs:
         if not FAISS_AVAILABLE:
-            raise ImportError("需要安装 faiss: pip install faiss-gpu 或 faiss-cpu")
+            raise ImportError("FAISS is required: pip install faiss-gpu or faiss-cpu")
         
         print("-" * 30 + " RAG START " + "-" * 30)
-        # 使用 GPU 进行 Embedding 加速，用完后释放
+        # Use GPU for embedding acceleration; free after use
         rag_device = "cuda" if torch.cuda.is_available() else "cpu"
         retriever = RAGRetriever(args.rag_index, args.rag_docs, args.rag_model, device=rag_device)
         
         prompts = retriever.search_and_inject(prompts, raw_questions, k=args.rag_k)
         
-        # 释放显存
+        # Free VRAM
         del retriever
         gc.collect()
         torch.cuda.empty_cache()
         print("-" * 30 + " RAG DONE & MEM CLEARED " + "-" * 30)
     
-    # 3. 加载生成模型 (LLM)
+    # 3. Load the generation model (LLM)
     print(f"[Model] Loading LLM: {args.model}")
     tok = AutoTokenizer.from_pretrained(args.model, use_fast=True)
-    if tok.pad_token is None: tok.pad_token = tok.eos_token
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
     tok.padding_side = "left"
 
     dtype = str2dtype(args.dtype)
@@ -293,9 +310,10 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(args.model, **loader_kwargs).eval().to("cuda")
         dev = torch.device("cuda")
 
-    # 加载 Adapter
+    # Load adapter
     if args.adapter:
-        if not PEFT_AVAILABLE: raise ImportError("Need peft")
+        if not PEFT_AVAILABLE:
+            raise ImportError("Need peft")
         print(f"[Adapter] Loading adapter: {args.adapter}")
         model = PeftModel.from_pretrained(model, args.adapter)
         model.eval()
@@ -303,7 +321,7 @@ def main():
     model.config.pad_token_id = tok.eos_token_id
     model.config.use_cache = False
 
-    # 4. 评测循环
+    # 4. Evaluation loop
     CAND = build_candidates(tok)
     
     prior = None
@@ -313,7 +331,7 @@ def main():
     preds = []
     print(f"[Eval] Starting inference on {len(prompts)} items...")
     for i in tqdm(range(0, len(prompts), args.batch), desc="Inference"):
-        # 增加 max_len 因为 RAG 上下文很长
+        # Increase max_len because RAG contexts are long
         batch_prompts = prompts[i : i + args.batch]
         lp = last_logprobs(model, tok, batch_prompts, args.max_len, dev)
         
@@ -321,20 +339,28 @@ def main():
         cols = []
         for ch in LETTERS:
             idx = CAND[ch]
-            if not idx: cols.append(torch.full((lp.size(0),), -1e9, device=lp.device))
+            if not idx:
+                cols.append(torch.full((lp.size(0),), -1e9, device=lp.device))
             else:
                 sc = torch.logsumexp(torch.stack([lp[:, j] for j in idx], dim=1), dim=1)
-                if prior: sc -= prior[ch]
+                if prior:
+                    sc -= prior[ch]
                 cols.append(sc)
         
         S = torch.stack(cols, dim=1)
         preds.extend([LETTERS[k] for k in S.argmax(dim=1).tolist()])
 
-    # 5. 保存与结果
+    # 5. Saving and results
     if args.save_jsonl:
         with open(args.save_jsonl, "w", encoding="utf-8") as f:
             for i, (p, g, pr) in enumerate(zip(prompts, gold, preds)):
-                f.write(json.dumps({"idx": i, "gold": g, "pred": pr, "correct": pr==g, "prompt": p}, ensure_ascii=False) + "\n")
+                f.write(
+                    json.dumps(
+                        {"idx": i, "gold": g, "pred": pr, "correct": pr == g, "prompt": p},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
         print(f"Saved results to {args.save_jsonl}")
 
     compute_confusion_and_metrics(preds, gold, prompts)

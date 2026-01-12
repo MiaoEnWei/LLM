@@ -1,8 +1,8 @@
-# 文件명：scripts/eval_compare_models_korean.py
-# 新脚本：base GPT-2 와 prompt tuning 모델의 MedMCQA 성능 비교 (한글 출력)
-# - 두 모델 동시에 실행
-# - 분류: 둘 다 맞음, 둘 다 틀림, base 맞음 prompt tuning 틀림, base 틀림 prompt tuning 맞음
-# - 각 카테고리에서 랜덤으로 5개 예시 (또는 적으면 전체) 출력: index, prompt, gold, pred_base, pred_prompt_tuning
+# File name: scripts/eval_compare_models_korean.py
+# New script: Compare MedMCQA performance between base GPT-2 and the prompt tuning model (English output)
+# - Run both models at the same time
+# - Categorize: both correct, both wrong, base correct & prompt tuning wrong, base wrong & prompt tuning correct
+# - Randomly print 5 examples per category (or all if fewer): index, prompt, gold, pred_base, pred_prompt_tuning
 
 import argparse, json, re, os
 import random
@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 LETTERS = "ABCD"
 
-# ---- PEFT 지원 ----
+# ---- PEFT support ----
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
@@ -34,24 +34,24 @@ def build_args():
     ap.add_argument(
         "--model",
         default="./gpt2",
-        help="기본 모델 경로 (e.g., ./gpt2)",
+        help="Base model path (e.g., ./gpt2)",
     )
     ap.add_argument(
         "--adapter",
         default=".\out_gpt2_pubmedqa_decision_prompt_tuning_v2",
-        help="PEFT 어댑터 디렉토리 (e.g., .\out_gpt2_pubmedqa_decision_prompt_tuning_v2)",
+        help="PEFT adapter directory (e.g., .\out_gpt2_pubmedqa_decision_prompt_tuning_v2)",
     )
     ap.add_argument(
         "--val",
         default=".\data\official_raw\medmcqa_validation.jsonl",
-        help="검증 데이터 jsonl 경로",
+        help="Validation data jsonl path",
     )
     ap.add_argument("--max_len", type=int, default=256)
     ap.add_argument(
         "--batch",
         type=int,
         default=16,
-        help="배치 크기",
+        help="Batch size",
     )
     ap.add_argument(
         "--dtype",
@@ -62,7 +62,7 @@ def build_args():
         "--calib_n",
         type=int,
         default=1500,
-        help="사전 샘플 수; 0=캘리브레이션 비활성화",
+        help="Number of pre-samples; 0=disable calibration",
     )
     ap.add_argument(
         "--device_map",
@@ -72,7 +72,7 @@ def build_args():
     ap.add_argument(
         "--load_in_8bit",
         action="store_true",
-        help="bitsandbytes 8-bit 양자화",
+        help="bitsandbytes 8-bit quantization",
     )
     ap.add_argument(
         "--seed",
@@ -83,13 +83,13 @@ def build_args():
         "--limit",
         type=int,
         default=0,
-        help=">0 이면 앞 N개만 평가 (디버깅용)",
+        help="If >0, evaluate only the first N samples (for debugging)",
     )
     ap.add_argument(
         "--num_examples",
         type=int,
         default=5,
-        help="각 카테고리별 출력 예시 수",
+        help="Number of examples to print per category",
     )
     return ap.parse_args()
 
@@ -103,7 +103,7 @@ def str2dtype(x: str):
     }[x]
 
 
-# parsing 함수 (원본과 동일)
+# parsing functions (same as original)
 def cop_to_letter(v) -> Optional[str]:
     if v is None:
         return None
@@ -202,7 +202,7 @@ def load_eval_items(path: str) -> Tuple[List[str], List[str]]:
     return prompts, gold
 
 
-# scoring 함수 (원본과 동일)
+# scoring functions (same as original)
 def single_token_id(tok, s: str) -> Optional[int]:
     ids = tok.encode(s, add_special_tokens=False)
     return ids[0] if len(ids) == 1 else None
@@ -327,8 +327,8 @@ def load_model(args, adapter_path=None):
 
     if adapter_path:
         if not PEFT_AVAILABLE:
-            raise ImportError("peft 라이브러리 필요: pip install peft")
-        print(f"[compare] PEFT 어댑터 로딩 중: {adapter_path}")
+            raise ImportError("peft library required: pip install peft")
+        print(f"[compare] Loading PEFT adapter: {adapter_path}")
         model = PeftModel.from_pretrained(model, adapter_path).eval()
 
     model.config.pad_token_id = tok.eos_token_id
@@ -345,31 +345,31 @@ def main():
     set_seed(args.seed)
 
     prompts, gold = load_eval_items(args.val)
-    assert len(prompts) > 0, f"0개 샘플 파싱: {args.val}"
+    assert len(prompts) > 0, f"Parsed 0 samples: {args.val}"
 
     if args.limit and args.limit > 0:
         n = min(args.limit, len(prompts))
         prompts = prompts[:n]
         gold = gold[:n]
-        print(f"[Eval] {args.val}에서 앞 {n}개 검증 샘플로 제한")
+        print(f"[Eval] Limited to the first {n} validation samples from {args.val}")
 
-    # base 모델 로딩
-    print("[compare] base 모델 로딩 중...")
+    # load base model
+    print("[compare] Loading base model...")
     model_base, tok, dev = load_model(args)
     CAND = build_candidates(tok)
-    assert any(len(v) > 0 for v in CAND.values()), f"후보 토큰 없음: {CAND}"
+    assert any(len(v) > 0 for v in CAND.values()), f"No candidate tokens: {CAND}"
     preds_base = predict(model_base, tok, prompts, args.max_len, args.batch, args.calib_n, dev, CAND)
 
-    # prompt tuning 모델 로딩
-    print("[compare] prompt tuning 모델 로딩 중...")
+    # load prompt tuning model
+    print("[compare] Loading prompt tuning model...")
     model_pt, _, _ = load_model(args, args.adapter)
     preds_pt = predict(model_pt, tok, prompts, args.max_len, args.batch, args.calib_n, dev, CAND)
 
-    # 예시 분류
-    both_correct = []                     # 둘 다 맞음
-    both_wrong = []                       # 둘 다 틀림
-    base_correct_pt_wrong = []            # base 맞음, prompt tuning 틀림
-    base_wrong_pt_correct = []            # base 틀림, prompt tuning 맞음
+    # categorize examples
+    both_correct = []                     # both correct
+    both_wrong = []                       # both wrong
+    base_correct_pt_wrong = []            # base correct, prompt tuning wrong
+    base_wrong_pt_correct = []            # base wrong, prompt tuning correct
 
     for i in range(len(prompts)):
         p_base = preds_base[i]
@@ -386,7 +386,7 @@ def main():
         elif p_base != g and p_pt == g:
             base_wrong_pt_correct.append(item)
 
-    # 랜덤 샘플링
+    # random sampling
     def sample_examples(lst, n):
         if len(lst) <= n:
             return lst
@@ -398,28 +398,28 @@ def main():
     base_correct_pt_wrong_samples = sample_examples(base_correct_pt_wrong, num)
     base_wrong_pt_correct_samples = sample_examples(base_wrong_pt_correct, num)
 
-    # 한글 출력 함수
+    # English printing function
     def print_samples(title, samples):
-        print("\n" + "=" * 20 + f" {title} ({len(samples)}개) " + "=" * 20)
+        print("\n" + "=" * 20 + f" {title} ({len(samples)} items) " + "=" * 20)
         for (i, prompt, g, p_base, p_pt) in samples:
-            print(f"\n--- [문제 #{i}] Base: {p_base} | Prompt Tuning: {p_pt} | 정답: {g} ---")
+            print(f"\n--- [Question #{i}] Base: {p_base} | Prompt Tuning: {p_pt} | Gold: {g} ---")
             print(prompt)
 
-    print_samples("① 둘 다 정답", both_correct_samples)
-    print_samples("② 둘 다 오답", both_wrong_samples)
-    print_samples("③ Base만 정답 → Prompt Tuning 오답", base_correct_pt_wrong_samples)
-    print_samples("④ Base 오답 → Prompt Tuning 정답 (구출 성공!)", base_wrong_pt_correct_samples)
+    print_samples("① Both Correct", both_correct_samples)
+    print_samples("② Both Wrong", both_wrong_samples)
+    print_samples("③ Only Base Correct → Prompt Tuning Wrong", base_correct_pt_wrong_samples)
+    print_samples("④ Base Wrong → Prompt Tuning Correct (Rescued!)", base_wrong_pt_correct_samples)
 
-    # 추가 통계 (수정된 버그 없는 버전)
+    # additional stats (version without the previous bug)
     total = len(prompts)
     acc_base = sum(1 for i in range(total) if preds_base[i] == gold[i]) / total
     acc_pt = sum(1 for i in range(total) if preds_pt[i] == gold[i]) / total
 
     print("\n" + "="*60)
-    print(f"전체 문제 수      : {total} 개")
-    print(f"Base 모델 정확도   : {acc_base*100:5.2f}%")
-    print(f"Prompt Tuning 정확도: {acc_pt*100:5.2f}%  (+{ (acc_pt - acc_base)*100 :5.2f}%)")
-    print(f"Prompt Tuning이 구출한 문제 수 : {len(base_wrong_pt_correct)} 개")
+    print(f"Total questions         : {total} items")
+    print(f"Base model accuracy      : {acc_base*100:5.2f}%")
+    print(f"Prompt Tuning accuracy   : {acc_pt*100:5.2f}%  (+{ (acc_pt - acc_base)*100 :5.2f}%)")
+    print(f"Questions rescued by Prompt Tuning : {len(base_wrong_pt_correct)} items")
     print("="*60)
 
 

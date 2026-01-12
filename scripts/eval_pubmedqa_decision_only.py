@@ -1,9 +1,9 @@
 """
-PubMedQA 决策一致性评测（Decision-only ACC）
+PubMedQA decision consistency evaluation (Decision-only ACC)
 
-- 从官方 parquet 读取 question / context / final_decision
-- 用 Causal LM（GPT-2 / LLaMA 等）生成【只输出 Yes/No/Maybe】
-- 计算 Yes/No/Maybe 的 ACC + 混淆矩阵
+- Read question / context / final_decision from the official parquet
+- Use a Causal LM (GPT-2 / LLaMA, etc.) to generate [only Yes/No/Maybe]
+- Compute Yes/No/Maybe ACC + confusion matrix
 """
 
 import os
@@ -19,7 +19,7 @@ import pyarrow.parquet as pq
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers.utils import logging as hf_logging
 
-# 可选：PEFT 适配器支持（Prompt Tuning / LoRA）
+# Optional: PEFT adapter support (Prompt Tuning / LoRA)
 try:
     from peft import PeftModel
     PEFT_AVAILABLE = True
@@ -28,7 +28,7 @@ except ImportError:
 
 
 def set_seed(seed: int):
-    """尽量做到可复现（CPU/GPU）。"""
+    """Make results as reproducible as possible (CPU/GPU)."""
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -46,7 +46,7 @@ def set_seed(seed: int):
 
 
 def join_context(c, max_chars: int) -> str:
-    """把 context 结构拍平为字符串，只取 contexts 字段并裁剪。"""
+    """Flatten the context structure into a string; use only the contexts field and truncate."""
     try:
         ctxs = (c or {}).get("contexts", [])
         if not ctxs:
@@ -59,7 +59,7 @@ def join_context(c, max_chars: int) -> str:
 
 def build_prompt(tok, use_chat_template: bool, q: str, ctx: str) -> str:
     """
-    决策-only 的 prompt：要求模型只输出 Yes/No/Maybe
+    Decision-only prompt: require the model to output only Yes/No/Maybe
     """
     if use_chat_template and hasattr(tok, "apply_chat_template"):
         msgs = [
@@ -78,7 +78,7 @@ def build_prompt(tok, use_chat_template: bool, q: str, ctx: str) -> str:
             msgs, tokenize=False, add_generation_prompt=True
         )
 
-    # 非 chat 模型：直接用 plain prompt
+    # Non-chat model: use a plain prompt
     return (
         "You are a biomedical QA assistant.\n"
         f"Question: {q}\n"
@@ -90,27 +90,27 @@ def build_prompt(tok, use_chat_template: bool, q: str, ctx: str) -> str:
 
 def extract_decision(text: str):
     """
-    从生成文本中抽取 yes/no/maybe（大小写不敏感）：
-    1) 先从开头附近找（更符合“只输出一个词”的预期）
-    2) 再 fallback 到全文最后一次出现
+    Extract yes/no/maybe from generated text (case-insensitive):
+    1) Try near the beginning (matches the expectation of "only one word")
+    2) Fallback: take the last occurrence in the full text
     """
     t = (text or "").strip().lower()
 
-    # 去掉前后引号 / 标点
+    # Strip surrounding quotes/punctuation
     t = t.strip(' "\'\n\t.')
 
-    # 试着匹配“开头就是一个词”
+    # Try to match "the whole output is a single word"
     m = re.match(r"^(yes|no|maybe)\b\.?$", t)
     if m:
         return m.group(1)
 
-    # 全文中找所有 yes/no/maybe，取最后一个
+    # Find all yes/no/maybe and take the last one
     cand = re.findall(r"\b(yes|no|maybe)\b", t)
     return cand[-1] if cand else None
 
 
 def normalize_decision(x: str) -> str:
-    """把 gold decision 统一成 yes/no/maybe 小写三类."""
+    """Normalize gold decision to three lowercase classes: yes/no/maybe."""
     s = (str(x) or "").strip().lower()
     if s.startswith("y"):
         return "yes"
@@ -120,7 +120,7 @@ def normalize_decision(x: str) -> str:
 
 
 def decision_metrics(pred_list, gold_list):
-    """给出基础 ACC 和混淆统计。"""
+    """Compute basic ACC and confusion stats."""
     assert len(pred_list) == len(gold_list)
     valid_idx = [i for i, p in enumerate(pred_list) if p is not None]
     if not valid_idx:
@@ -147,16 +147,16 @@ def decision_metrics(pred_list, gold_list):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parquet", required=True, help="pqa_labeled_test.parquet 路径")
-    ap.add_argument("--model", required=True, help="HF 模型名或本地权重目录")
-    ap.add_argument("--adapter", default="", help="PEFT 适配器目录，可选（Prompt Tuning / LoRA）")
-    ap.add_argument("--use_chat_template", action="store_true", help="对 -chat 模型启用 chat 模板")
-    ap.add_argument("--limit", type=int, default=500, help="评测样本数（从头部截取）")
-    ap.add_argument("--max_new_tokens", type=int, default=4, help="最多生成几个 token（决策任务不需要太多）")
+    ap.add_argument("--parquet", required=True, help="Path to pqa_labeled_test.parquet")
+    ap.add_argument("--model", required=True, help="HF model name or local weights directory")
+    ap.add_argument("--adapter", default="", help="PEFT adapter directory (optional: Prompt Tuning / LoRA)")
+    ap.add_argument("--use_chat_template", action="store_true", help="Enable chat template for -chat models")
+    ap.add_argument("--limit", type=int, default=500, help="Number of samples to evaluate (take from the head)")
+    ap.add_argument("--max_new_tokens", type=int, default=4, help="Max tokens to generate (decision task needs few)")
     ap.add_argument("--max_ctx_chars", type=int, default=4000)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--quiet", action="store_true", help="静默 Transformers 日志")
-    ap.add_argument("--local_files_only", action="store_true", help="仅使用本地模型文件")
+    ap.add_argument("--quiet", action="store_true", help="Silence Transformers logs")
+    ap.add_argument("--local_files_only", action="store_true", help="Use local model files only")
     args = ap.parse_args()
 
     if args.quiet:
@@ -164,14 +164,14 @@ def main():
 
     set_seed(args.seed)
 
-    # 读取 & 对齐数据
+    # Read & align data
     tbl = pq.read_table(args.parquet)
     df_full = tbl.to_pandas()
 
     needed_cols = ["question", "context", "final_decision"]
     for col in needed_cols:
         if col not in df_full.columns:
-            raise ValueError(f"parquet 缺少列: {col}，当前列: {list(df_full.columns)}")
+            raise ValueError(f"Missing column in parquet: {col}. Current columns: {list(df_full.columns)}")
 
     df = df_full[needed_cols].dropna().head(args.limit)
     df["ctx"] = df["context"].map(lambda c: join_context(c, args.max_ctx_chars))
@@ -180,7 +180,7 @@ def main():
     ctx_list = df["ctx"].tolist()
     gold_decisions = [normalize_decision(x) for x in df["final_decision"].tolist()]
 
-    # 加载模型 & tokenizer
+    # Load model & tokenizer
     use_fp16 = torch.cuda.is_available()
     print(f"[DecisionEval] Loading tokenizer from: {args.model}")
     tok = AutoTokenizer.from_pretrained(
@@ -200,10 +200,10 @@ def main():
     )
     model.config.pad_token_id = tok.pad_token_id
 
-    # 可选加载 PEFT adapter
+    # Optionally load PEFT adapter
     if args.adapter:
         if not PEFT_AVAILABLE:
-            raise ImportError("指定了 --adapter，但当前环境未安装 peft，请先 pip install peft")
+            raise ImportError("You specified --adapter, but peft is not installed. Please run: pip install peft")
         print(f"[DecisionEval] Loading PEFT adapter from: {args.adapter}")
         model = PeftModel.from_pretrained(
             model,
@@ -223,7 +223,7 @@ def main():
             out = model.generate(
                 **inputs,
                 max_new_tokens=args.max_new_tokens,
-                do_sample=False,  # 决策任务先用贪心
+                do_sample=False,  # use greedy decoding first for decision tasks
                 pad_token_id=tok.pad_token_id,
                 eos_token_id=tok.eos_token_id,
             )
@@ -235,7 +235,7 @@ def main():
         if (i + 1) % 20 == 0:
             print(f"[DecisionEval] {i+1}/{len(df)}")
 
-    # 抽取决策 & 计算指标
+    # Extract decisions & compute metrics
     pred_decisions = [extract_decision(t) for t in preds]
     metrics = decision_metrics(pred_decisions, gold_decisions)
 
@@ -251,7 +251,7 @@ def main():
         ensure_ascii=False,
     ))
 
-    # 可选：把原始预测保存下来，方便排查
+    # Optional: save raw predictions for debugging
     os.makedirs("eval_out", exist_ok=True)
     out_path = "eval_out/pubmedqa_decision_only_samples.jsonl"
     with open(out_path, "w", encoding="utf-8") as f:

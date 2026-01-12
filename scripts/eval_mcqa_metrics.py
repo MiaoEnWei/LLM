@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 eval_mcqa_metrics.py
-- 读取 JSONL（每行一个 dict）
-- 自动/手动提取 gold 与 pred（支持 A/B/C/D 或 1~4 或 0~3）
-- 计算：
+- Read JSONL (one dict per line)
+- Auto/manual extraction of gold and pred (supports A/B/C/D or 1~4 or 0~3)
+- Compute:
   - ACC
   - Per-class Precision / Recall / F1 / Support
   - Macro Avg
-  - Weighted Avg（P/R/F1 都给）
-  - Micro Avg（单标签多分类下等于 ACC；即使出现无效预测也会按 UNK 计入）
-  - Confusion Matrix（rows=Gold, cols=Pred）
+  - Weighted Avg (P/R/F1 all reported)
+  - Micro Avg (for single-label multi-class equals ACC; even invalid predictions are counted as UNK)
+  - Confusion Matrix (rows=Gold, cols=Pred)
 """
 
 import argparse
@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 # -----------------------------
-# 解析标签：支持 A/B/C/D, 1~4, 0~3
+# Parse labels: supports A/B/C/D, 1~4, 0~3
 # -----------------------------
 DEFAULT_LABELS = ["A", "B", "C", "D"]
 
@@ -33,12 +33,12 @@ _pat_digit03 = re.compile(r"\b([0-3])\b")
 
 def parse_label(x: Any, labels: List[str]) -> Optional[str]:
     """
-    把任意输入解析成 labels 中的一个（如 A/B/C/D），解析失败返回 None。
+    Parse arbitrary input into one of the labels (e.g., A/B/C/D). Return None if parsing fails.
     """
     if x is None:
         return None
     if isinstance(x, (int, np.integer)):
-        # 1~4 或 0~3
+        # 1~4 or 0~3
         if 1 <= int(x) <= len(labels):
             return labels[int(x) - 1]
         if 0 <= int(x) < len(labels):
@@ -51,11 +51,11 @@ def parse_label(x: Any, labels: List[str]) -> Optional[str]:
 
     su = s.upper()
 
-    # 直接是字母
+    # Direct letter
     if su in labels:
         return su
 
-    # 直接是数字
+    # Direct digit
     if su.isdigit():
         v = int(su)
         if 1 <= v <= len(labels):
@@ -64,7 +64,7 @@ def parse_label(x: Any, labels: List[str]) -> Optional[str]:
             return labels[v]
         return None
 
-    # 文本里搜
+    # Search within text
     m = _pat_letter.search(su)
     if m and m.group(1) in labels:
         return m.group(1)
@@ -79,7 +79,7 @@ def parse_label(x: Any, labels: List[str]) -> Optional[str]:
         v = int(m.group(1))
         return labels[v]
 
-    # 兜底：前若干字符里找
+    # Fallback: scan the first few characters
     for ch in su[:12]:
         if ch in labels:
             return ch
@@ -88,7 +88,7 @@ def parse_label(x: Any, labels: List[str]) -> Optional[str]:
 
 
 # -----------------------------
-# JSON dict 取值：支持 dotted path (a.b.c)
+# JSON dict value retrieval: supports dotted path (a.b.c)
 # -----------------------------
 def get_by_path(d: Dict[str, Any], path: str) -> Any:
     cur: Any = d
@@ -100,7 +100,7 @@ def get_by_path(d: Dict[str, Any], path: str) -> Any:
 
 
 # -----------------------------
-# 自动猜 gold/pred 字段名
+# Auto-detect gold/pred field names
 # -----------------------------
 GOLD_CANDIDATES = [
     "gold", "gt", "label", "answer", "cop", "ground_truth", "y_true", "target", "correct"
@@ -119,7 +119,7 @@ def autodetect_key(keys: List[str], candidates: List[str]) -> Optional[str]:
 
 
 # -----------------------------
-# 计算指标
+# Metric computation
 # -----------------------------
 def safe_div(a: float, b: float) -> float:
     return float(a / b) if b != 0 else 0.0
@@ -132,38 +132,37 @@ def prf1(tp: int, fp: int, fn: int) -> Tuple[float, float, float]:
 
 def compute_report(golds: List[str], preds: List[str], labels: List[str]) -> Dict[str, Any]:
     """
-    labels：目标标签集合（一般是 A/B/C/D）
-    golds/preds：长度相同。pred 允许出现不在 labels 的值（会当作 UNK）
+    labels: target label set (typically A/B/C/D)
+    golds/preds: same length. preds may include values not in labels (treated as UNK)
     """
     assert len(golds) == len(preds)
     n = len(golds)
 
-    # 统计分布（只统计 labels + UNK）
+    # Distribution stats (count labels + UNK)
     pred_cnt = Counter(preds)
     gold_cnt = Counter(golds)
 
-    # --- per-class 统计（只对 labels 计算）---
-    # confusion matrix：rows=gold, cols=pred（包含 labels + UNK）
-    cols = labels[:]  # 先放 A/B/C/D
+    # --- per-class stats (computed only over labels) ---
+    # confusion matrix: rows=gold, cols=pred (includes labels + UNK)
+    cols = labels[:]  # start with A/B/C/D
     if any(p not in labels for p in preds):
         cols = cols + ["UNK"]
 
-    # 初始化 CM
+    # Initialize CM
     cm = {g: {c: 0 for c in cols} for g in labels}
     for g, p in zip(golds, preds):
         col = p if p in labels else "UNK"
         if g in labels:
             cm[g][col] += 1
 
-    # TP/FP/FN 计算
+    # TP/FP/FN
     per = []  # (label, prec, recall, f1, support, tp)
-    # 先准备：每个 label 的 support / tp / fp / fn
     for lab in labels:
         support = gold_cnt.get(lab, 0)
         tp = cm[lab].get(lab, 0)
-        # fp：预测为 lab 但 gold 不是 lab（含其他 gold 类）
+        # fp: predicted as lab but gold is not lab (includes other gold classes)
         fp = sum(cm[g].get(lab, 0) for g in labels if g != lab)
-        # fn：gold 为 lab 但 pred 不是 lab（含 pred=UNK）
+        # fn: gold is lab but pred is not lab (includes pred=UNK)
         fn = support - tp
         p, r, f1 = prf1(tp, fp, fn)
         per.append((lab, p, r, f1, support, tp))
@@ -187,7 +186,7 @@ def compute_report(golds: List[str], preds: List[str], labels: List[str]) -> Dic
     correct = sum(1 for g, p in zip(golds, preds) if g == p)
     acc = safe_div(correct, n)
 
-    # micro：单标签多分类 -> micro P=R=F1=ACC（按“每样本1个预测”定义）
+    # micro: single-label multi-class -> micro P=R=F1=ACC (one prediction per sample)
     micro_p = acc
     micro_r = acc
     micro_f = acc
@@ -218,27 +217,27 @@ def print_report(rep: Dict[str, Any]) -> None:
     micro_p, micro_r, micro_f = rep["micro"]
     acc = rep["acc"]
 
-    # 分布
+    # Distributions
     print("\n=== Distribution ===")
-    # 只按 labels + UNK 排序打印
+    # Print in labels + UNK order
     order = labels + (["UNK"] if "UNK" in pred_cnt else [])
     print("Pred count:", {k: int(pred_cnt.get(k, 0)) for k in order})
     print("Gold count:", {k: int(gold_cnt.get(k, 0)) for k in labels})
 
-    # per-class
+    # Per-class
     print("\n=== Per-class ===")
     print("Class  |  Prec   Recall   F1     Support   Correct/Gold")
     for lab, p, r, f1, sup, tp in per:
         print(f"  {lab:<4} |  {p:0.4f}  {r:0.4f}  {f1:0.4f}   {sup:>7}     {tp}/{sup}")
 
-    # averages
+    # Averages
     print("\n=== Averages ===")
     print(f"Macro-Avg  P={macro_p:0.4f}  R={macro_r:0.4f}  F1={macro_f:0.4f}")
     print(f"Weighted   P={weighted_p:0.4f}  R={weighted_r:0.4f}  F1={weighted_f:0.4f}")
     print(f"Micro-Avg  P={micro_p:0.4f}  R={micro_r:0.4f}  F1={micro_f:0.4f}")
     print(f"ACC        = {acc:0.4f}")
 
-    # confusion matrix
+    # Confusion matrix
     cm = rep["cm"]
     cols = rep["cm_cols"]
 
@@ -251,7 +250,7 @@ def print_report(rep: Dict[str, Any]) -> None:
 
 
 # -----------------------------
-# 读文件 & 主流程
+# File reading & main flow
 # -----------------------------
 def read_jsonl(path: str) -> List[Dict[str, Any]]:
     data = []
@@ -265,11 +264,11 @@ def read_jsonl(path: str) -> List[Dict[str, Any]]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="inp", required=True, help="输入 jsonl 文件路径")
-    ap.add_argument("--gold_key", default="", help="gold 字段名（支持 dotted path，如 a.b.c）")
-    ap.add_argument("--pred_key", default="", help="pred 字段名（支持 dotted path）")
-    ap.add_argument("--labels", default="ABCD", help="类别标签顺序，默认 ABCD")
-    ap.add_argument("--limit", type=int, default=0, help="只评测前 N 条（0=全量）")
+    ap.add_argument("--in", dest="inp", required=True, help="Input jsonl file path")
+    ap.add_argument("--gold_key", default="", help="Gold field name (supports dotted path, e.g., a.b.c)")
+    ap.add_argument("--pred_key", default="", help="Pred field name (supports dotted path)")
+    ap.add_argument("--labels", default="ABCD", help="Class label order, default ABCD")
+    ap.add_argument("--limit", type=int, default=0, help="Evaluate only the first N items (0=all)")
     args = ap.parse_args()
 
     path = args.inp
@@ -288,15 +287,15 @@ def main():
         print("Empty file.")
         return
 
-    # 自动识别字段
+    # Auto-detect fields
     keys0 = list(data[0].keys())
     gold_key = args.gold_key.strip() or autodetect_key(keys0, GOLD_CANDIDATES)
     pred_key = args.pred_key.strip() or autodetect_key(keys0, PRED_CANDIDATES)
 
     if not gold_key or not pred_key:
-        print("无法自动识别 gold/pred 字段名。")
-        print("当前样本 keys:", keys0)
-        print("请手动指定：--gold_key xxx --pred_key yyy")
+        print("Unable to auto-detect gold/pred field names.")
+        print("Current sample keys:", keys0)
+        print("Please specify manually: --gold_key xxx --pred_key yyy")
         return
 
     golds: List[str] = []
@@ -310,12 +309,12 @@ def main():
         g = parse_label(g_raw, labels)
         p = parse_label(p_raw, labels)
 
-        # gold 解析失败：这条没法算（直接丢弃）
+        # If gold parsing fails: cannot score this sample (drop it)
         if g is None:
             dropped += 1
             continue
 
-        # pred 解析失败：记为 UNK（仍计入总体 ACC / micro）
+        # If pred parsing fails: mark as UNK (still counted in overall ACC / micro)
         if p is None:
             p = "UNK"
 
@@ -323,7 +322,7 @@ def main():
         preds.append(p)
 
     if not golds:
-        print("没有可评测样本（gold 全解析失败）。")
+        print("No evaluable samples (all gold labels failed to parse).")
         return
 
     if dropped:
@@ -332,7 +331,7 @@ def main():
     rep = compute_report(golds, preds, labels)
     print_report(rep)
 
-    # 额外提示字段
+    # Extra field info
     print(f"\n[Info] using gold_key='{gold_key}', pred_key='{pred_key}', evaluated={rep['n']}")
 
 if __name__ == "__main__":

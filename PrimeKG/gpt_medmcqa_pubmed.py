@@ -18,9 +18,9 @@ except ImportError:
 
 
 # [Configuration Area]
-BASE_GPT2_PATH      = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/gpt2"
-TUNED_GPT2_PATH     = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/out_gpt2_official_prompt_tuning_e1"
-MEDMCQA_FILE        = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/data/medmcqa/dev.json"
+BASE_GPT2_PATH      = "/LLM/gpt2"
+TUNED_GPT2_PATH     = "/LLM/out_gpt2_official_prompt_tuning_e1"
+MEDMCQA_FILE        = "/LLM/data/medmcqa/dev.json"
 FAISS_INDEX_PATH    = "pubmed_qa.index"
 DOCS_PKL_PATH       = "pubmed_documents.pkl"
 EMBED_MODEL_NAME    = "all-MiniLM-L6-v2" 

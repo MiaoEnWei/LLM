@@ -145,3 +145,35 @@ BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext/
 
 # large data
 PrimeKG/kg.csv
+
+# =========================
+# PrimeKG: data / outputs / caches (DO NOT COMMIT)
+# =========================
+PrimeKG/data/
+PrimeKG/datasets/
+PrimeKG/eval_out*/
+PrimeKG/eval_results*/
+PrimeKG/results*/
+PrimeKG/results_*/
+PrimeKG/rag_logs*/
+PrimeKG/kg_cache_pubmedqa/
+PrimeKG/knowledge_graph/
+PrimeKG/export_primekg/
+PrimeKG/case_study/
+
+# indices / embeddings / artifacts
+PrimeKG/*.index
+PrimeKG/*.pkl
+PrimeKG/*emb*.pkl
+
+# misc experiment outputs
+PrimeKG/*.csv
+PrimeKG/*.txt
+
+# =========================
+# generic
+# =========================
+**/__pycache__/
+**/*.pyc
+**/.ipynb_checkpoints/
+*.save

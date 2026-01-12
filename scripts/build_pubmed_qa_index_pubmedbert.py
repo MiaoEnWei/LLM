@@ -1,5 +1,4 @@
 # build_pubmed_qa_index_pubmedbert.py
-# 用 PubMedBERT 重新为 pubmed_documents.pkl 构建一个 768 维的 Faiss 索引
 
 import pickle
 import numpy as np
@@ -7,8 +6,8 @@ import faiss
 import torch
 from transformers import AutoTokenizer, AutoModel
 
-DOC_PATH = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/PrimeKG/pubmed_documents.pkl"
-OUT_INDEX_PATH = "/media/miaoen/ad4277ac-5cfe-47b0-a2cc-f9e50e0da444/LLM/PrimeKG/pubmed_qa_pubmedbert.index"
+DOC_PATH = "/LLM/PrimeKG/pubmed_documents.pkl"
+OUT_INDEX_PATH = "/LLM/PrimeKG/pubmed_qa_pubmedbert.index"
 ENCODER_NAME = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
 BATCH_SIZE = 16
 MAX_LEN = 256
@@ -74,7 +73,7 @@ def main():
     dim = all_vecs.shape[1]
     print("Embedding dim =", dim)
 
-    # 如果你想用 cosine，相当于先归一化再用内积
+    # If you want to use cosine similarity, it's equivalent to L2-normalizing first and then using inner product
     faiss.normalize_L2(all_vecs)
     index = faiss.IndexFlatIP(dim)
     index.add(all_vecs)

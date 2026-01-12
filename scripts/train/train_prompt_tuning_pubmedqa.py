@@ -1,8 +1,8 @@
 # scripts/train/train_prompt_tuning_pubmedqa.py
 # -------------------------------------------------------------
-# GPT-2 在 PubMedQA (pqa_labeled) 上的 Prompt Tuning 训练脚本
-# - 从 parquet 读取 question / context / long_answer / final_decision
-# - 构造指令风格 text 字段，然后做 Prompt Tuning
+# Prompt Tuning training script for GPT-2 on PubMedQA (pqa_labeled)
+# - Reads question / context / long_answer / final_decision from parquet
+# - Builds an instruction-style "text" field, then performs Prompt Tuning
 # -------------------------------------------------------------
 
 import argparse
@@ -36,36 +36,67 @@ def set_seed(seed: int):
 
 def build_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model_name_or_path", type=str, required=True,
-                    help="基座模型路径 (e.g., ./gpt2)")
-    ap.add_argument("--parquet", type=str, required=True,
-                    help="PubMedQA parquet 文件路径 (e.g., data/pubmedqa_hf/pqa_labeled/train-00000-of-00001.parquet)")
-    ap.add_argument("--output_dir", type=str, required=True,
-                    help="Prompt Tuning adapter 输出目录 (e.g., out_gpt2_pubmedqa_prompt_tuning)")
+    ap.add_argument(
+        "--model_name_or_path",
+        type=str,
+        required=True,
+        help="Base model path (e.g., ./gpt2)",
+    )
+    ap.add_argument(
+        "--parquet",
+        type=str,
+        required=True,
+        help="PubMedQA parquet file path (e.g., data/pubmedqa_hf/pqa_labeled/train-00000-of-00001.parquet)",
+    )
+    ap.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
+        help="Output directory for Prompt Tuning adapter (e.g., out_gpt2_pubmedqa_prompt_tuning)",
+    )
 
-    # 训练超参
-    ap.add_argument("--epochs", type=int, default=5,
-                    help="训练轮数 (PubMedQA 样本不多，可以多跑几圈)")
-    ap.add_argument("--batch_size", type=int, default=4,
-                    help="per-device 训练批大小")
-    ap.add_argument("--grad_accum", type=int, default=8,
-                    help="梯度累积步数 (有效 batch = batch_size * grad_accum)")
-    ap.add_argument("--lr", type=float, default=0.01,
-                    help="学习率 (Prompt Tuning 通常 1e-2 左右)")
+    # Training hyperparameters
+    ap.add_argument(
+        "--epochs",
+        type=int,
+        default=5,
+        help="Number of training epochs (PubMedQA has fewer samples, so you can run more epochs)",
+    )
+    ap.add_argument(
+        "--batch_size",
+        type=int,
+        default=4,
+        help="Per-device training batch size",
+    )
+    ap.add_argument(
+        "--grad_accum",
+        type=int,
+        default=8,
+        help="Gradient accumulation steps (effective batch = batch_size * grad_accum)",
+    )
+    ap.add_argument(
+        "--lr",
+        type=float,
+        default=0.01,
+        help="Learning rate (Prompt Tuning often uses around 1e-2)",
+    )
 
-    ap.add_argument("--seed", type=int, default=42,
-                    help="随机种子")
-    ap.add_argument("--num_virtual_tokens", type=int, default=20,
-                    help="虚拟提示 token 数 (例如 10 / 20 / 50)")
+    ap.add_argument("--seed", type=int, default=42, help="Random seed")
+    ap.add_argument(
+        "--num_virtual_tokens",
+        type=int,
+        default=20,
+        help="Number of virtual prompt tokens (e.g., 10 / 20 / 50)",
+    )
 
     return ap.parse_args()
 
 
 def flatten_context(c, max_chars: int = 4000) -> str:
-    """把 PubMedQA 的 context 对象拍平成字符串."""
+    """Flatten PubMedQA 'context' object into a string."""
     if c is None:
         return ""
-    # pqa_labeled 里 context 一般是 {"contexts": [str, str, ...]}
+    # In pqa_labeled, context is typically {"contexts": [str, str, ...]}
     if isinstance(c, dict):
         ctxs = c.get("contexts", [])
         if isinstance(ctxs, list):
@@ -82,14 +113,14 @@ def flatten_context(c, max_chars: int = 4000) -> str:
 
 
 def main():
-    # 避免显存碎片
+    # Avoid CUDA memory fragmentation
     if "PYTORCH_ALLOC_CONF" not in os.environ and "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
         os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
     args = build_args()
     set_seed(args.seed)
 
-    # 1) tokenizer
+    # 1) Tokenizer
     print(f"[train_pubmedqa] Loading tokenizer from {args.model_name_or_path}")
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name_or_path,
@@ -101,14 +132,14 @@ def main():
     tokenizer.padding_side = "left"
     print("[train_pubmedqa] Tokenizer loaded.")
 
-    # 2) 加载 PubMedQA parquet -> datasets
+    # 2) Load PubMedQA parquet -> datasets
     print(f"[train_pubmedqa] Loading PubMedQA parquet from {args.parquet}")
     dataset = load_dataset(
         "parquet",
         data_files={"train": args.parquet},
     )["train"]
 
-    # 预期字段: question, context, long_answer, final_decision
+    # Expected fields: question, context, long_answer, final_decision
     def build_text(example):
         q = (example.get("question") or "").strip()
         ctx_obj = example.get("context")
@@ -117,7 +148,7 @@ def main():
         long_ans = (example.get("long_answer") or "").strip()
         dec = (example.get("final_decision") or "").strip().lower()
 
-        # 规范决策词
+        # Normalize decision token
         if dec.startswith("y"):
             dec = "Yes"
         elif dec.startswith("n"):
@@ -125,7 +156,7 @@ def main():
         else:
             dec = "Maybe"
 
-        # 和 eval_pubmedqa_gen.py 一致的指令风格
+        # Instruction style aligned with eval_pubmedqa_gen.py
         prompt_lines = [
             "You are a biomedical QA assistant.",
             f"Question: {q}",
@@ -137,7 +168,7 @@ def main():
         )
         prompt = "\n".join(prompt_lines) + "\n\n"
 
-        # 目标：参考结论 + 决策词
+        # Target: rationale + decision word
         target = f"{long_ans} Decision: {dec}"
 
         text = prompt + target
@@ -155,7 +186,7 @@ def main():
             examples["text"],
             truncation=True,
             max_length=512,
-            padding=False,  # 让 DataCollator 处理 padding
+            padding=False,  # Let DataCollator handle padding
         )
 
     print("[train_pubmedqa] Tokenizing dataset...")
@@ -167,7 +198,7 @@ def main():
     )
     print(f"[train_pubmedqa] Tokenized samples: {len(tokenized_dataset)}")
 
-    # 3) 加载 GPT-2
+    # 3) Load GPT-2
     print(f"[train_pubmedqa] Loading base model from {args.model_name_or_path}")
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
@@ -177,7 +208,7 @@ def main():
     )
     model.config.use_cache = False
 
-    # 4) Prompt Tuning 配置
+    # 4) Prompt Tuning configuration
     print("[train_pubmedqa] Setting up Prompt Tuning config...")
     peft_config = PromptTuningConfig(
         task_type=TaskType.CAUSAL_LM,

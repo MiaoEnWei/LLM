@@ -42,14 +42,12 @@ def build_doc_text(ex, max_q_chars=300, max_opt_chars=180):
 
     cop = ex.get("cop", None)
     s = str(cop).strip()
-    # ✅ MedMCQA 这里按 1~4
     m = {"1": "A", "2": "B", "3": "C", "4": "D"}
     ans = m.get(s)
     if ans is None:
         return None
 
     correct = {"A": opa, "B": opb, "C": opc, "D": opd}[ans]
-    # doc = 相似题 + 正确选项文本（in-domain 最有效的形式之一）
     return f"Q: {q}\nA: {correct}"
 
 @torch.no_grad()

@@ -1,11 +1,11 @@
 # scripts/predict_logits_lora.py
 # ---------------------------------------------------------
-# V3 - 通用 logits 多选打分脚本
-# - 支持 GPT-2 / LLaMA 等 Causal LM
-# - 支持 PEFT 适配器 (LoRA / Prompt Tuning)
-# - 默认使用 fp16，全模型；可选 --use_4bit 用于大模型
-# - 输入: 每行 {"id": ..., "prompt": "...Answer (A, B, C, or D):"}
-# - 输出: 每行 {"id": ..., "pred_letter": "A/B/C/D", "score": logprob}
+# V3 - General-purpose logits-based multiple-choice scoring script
+# - Supports GPT-2 / LLaMA and other Causal LMs
+# - Supports PEFT adapters (LoRA / Prompt Tuning)
+# - Uses fp16 by default with full-precision model; optional --use_4bit for large models
+# - Input: each line {"id": ..., "prompt": "...Answer (A, B, C, or D):"}
+# - Output: each line {"id": ..., "pred_letter": "A/B/C/D", "score": logprob}
 # ---------------------------------------------------------
 
 import argparse
@@ -34,9 +34,9 @@ LETTER = "ABCD"
 
 
 def load_model_and_tokenizer(base_model_path, adapter_path, local_only=True, use_4bit=False):
-    """加载基座模型 + 可选 PEFT 适配器"""
+    """Load the base model + an optional PEFT adapter."""
     if adapter_path and not PEFT_AVAILABLE:
-        raise ImportError("检测到 --adapter，但未安装 'peft' 库，请先: pip install peft")
+        raise ImportError("Detected --adapter, but the 'peft' library is not installed. Please run: pip install peft")
 
     print(f"[predict] Loading tokenizer from: {base_model_path}")
     tokenizer = AutoTokenizer.from_pretrained(
@@ -46,12 +46,12 @@ def load_model_and_tokenizer(base_model_path, adapter_path, local_only=True, use
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "left"  # 方便截断 + 对齐
+    tokenizer.padding_side = "left"  # Helps truncation + alignment
 
     print(f"[predict] Loading base model from: {base_model_path}")
     if use_4bit:
         if not BITSANDBYTES_AVAILABLE:
-            raise ImportError("需要 bitsandbytes 才能使用 --use_4bit，请先安装。")
+            raise ImportError("bitsandbytes is required to use --use_4bit. Please install it first.")
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -65,7 +65,7 @@ def load_model_and_tokenizer(base_model_path, adapter_path, local_only=True, use
             local_files_only=local_only,
         )
     else:
-        # GPT-2 / 小模型走这个分支即可
+        # GPT-2 / smaller models can use this branch
         kwargs = {"local_files_only": local_only}
         if torch.cuda.is_available():
             kwargs.update(
@@ -100,47 +100,47 @@ def main():
     ap.add_argument(
         "--base_model",
         required=True,
-        help="基座模型路径 (e.g., ./gpt2, ./llama2)",
+        help="Base model path (e.g., ./gpt2, ./llama2)",
     )
     ap.add_argument(
         "--adapter",
         default="",
-        help="PEFT 适配器目录 (e.g., out_gpt2_official_prompt_tuning)",
+        help="PEFT adapter directory (e.g., out_gpt2_official_prompt_tuning)",
     )
     ap.add_argument(
         "--infile",
         required=True,
-        help="输入 prompts.jsonl (每行包含 id / prompt)",
+        help="Input prompts.jsonl (each line contains id / prompt)",
     )
     ap.add_argument(
         "--outfile",
         required=True,
-        help="输出 preds.jsonl 文件路径",
+        help="Output preds.jsonl file path",
     )
     ap.add_argument(
         "--batch_size",
         type=int,
         default=8,
-        help="评测批大小 (大模型可调小)",
+        help="Evaluation batch size (reduce for large models)",
     )
     ap.add_argument(
         "--local_files_only",
         action="store_true",
-        help="强制只使用本地文件",
+        help="Force using local files only",
     )
     ap.add_argument(
         "--use_4bit",
         action="store_true",
-        help="对大模型使用 4-bit 量化 (GPT-2 一般不需要)",
+        help="Use 4-bit quantization for large models (usually not needed for GPT-2)",
     )
 
     args = ap.parse_args()
 
-    # 你本地一直用本地路径，这里直接锁死为 True
+    # You always use local paths, so lock this to True.
     args.local_files_only = True
 
     if not args.adapter:
-        print("[WARN] 未提供 --adapter，将只使用基座模型进行评测。")
+        print("[WARN] No --adapter provided; evaluating with the base model only.")
 
     model, tok = load_model_and_tokenizer(
         args.base_model,
@@ -150,7 +150,7 @@ def main():
     )
     device = model.device
 
-    # 读取 prompts
+    # Read prompts
     prompts = []
     with open(args.infile, "r", encoding="utf-8") as f:
         for line in f:
@@ -162,13 +162,13 @@ def main():
     os.makedirs(os.path.dirname(args.outfile), exist_ok=True)
     w = open(args.outfile, "w", encoding="utf-8")
 
-    # 预先拿到 A/B/C/D 的 token id
+    # Pre-compute token ids for A/B/C/D
     label_tokens = {}
     for L in LETTER:
         ids = tok.encode(L, add_special_tokens=False)
         if len(ids) == 0:
-            raise ValueError(f"无法给字母 {L} 编码成 token id")
-        label_tokens[L] = ids[0]  # 对 'A','B','C','D' 来说基本都是单 token
+            raise ValueError(f"Failed to encode letter {L} into a token id")
+        label_tokens[L] = ids[0]  # For 'A','B','C','D' this is usually a single token
     print(f"[predict] Label token ids: {label_tokens}")
 
     total = len(prompts)
@@ -195,13 +195,14 @@ def main():
             logits = outputs.logits  # [B, T, V]
             logp = log_softmax(logits, dim=-1)
 
-        # 对每个样本，找最后一个非 pad 的位置，对应“下一个 token”的分布
-        # 我们用该位置的 logits 来评估 A/B/C/D 的 logprob
+        # For each sample, find the last non-pad position, and use that position's
+        # distribution to score the next token.
+        # We score A/B/C/D using the logprob at that position.
         last_indices = attention_mask.sum(dim=1) - 1  # [B]
 
         for b_idx, ex_id in enumerate(ids):
             pos = last_indices[b_idx].item()
-            # 对应位置的 logprob 向量
+            # Logprob vector at the selected position
             lp_vec = logp[b_idx, pos]  # [V]
 
             best_L = None

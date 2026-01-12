@@ -31,7 +31,7 @@ def load_preds(pred_jsonl):
             o = json.loads(line)
             pid = o.get("id")
             p = (o.get("pred_letter") or o.get("pred") or o.get("letter") or "").strip().upper()[:1]
-            preds[pid] = p if p in LETTER else None  # None 代表无效预测
+            preds[pid] = p if p in LETTER else None  # None indicates an invalid prediction
     return preds
 
 def main():
@@ -50,11 +50,11 @@ def main():
 
     invalid_cnt  = sum(p is None for p in y_pred_all)
     invalid_rate = invalid_cnt / len(common_ids) if common_ids else 0.0
-    # 为了算 ACC，把 None 填成一个固定标签（不会影响“错”的判定）
+    # To compute ACC, fill None with a fixed label (this will not affect the "incorrect" judgment)
     y_pred_fill = [p if p is not None else "A" for p in y_pred_all]
     acc_all  = accuracy_score(y_true_all, y_pred_fill)
 
-    # 有效子集的 F1/混淆矩阵
+    # F1/confusion matrix on the valid subset
     valid_mask = [p is not None for p in y_pred_all]
     y_true_v = [t for t, m in zip(y_true_all, valid_mask) if m]
     y_pred_v = [p for p, m in zip(y_pred_all, valid_mask) if m]

@@ -2,7 +2,25 @@
 
 This project evaluates GPT-2 and Llama-2 on medical QA datasets (PubMedQA, MedMCQA) using Parameter-Efficient Fine-Tuning (Prompt Tuning / LoRA).
 
-## 🛠️ Setup
+Important Note (Models Not Included)
+
+Due to repository size limitations, this repo does NOT include any base model weights (e.g., Llama-2 / GPT-2 checkpoints).
+
+Please download the base models from Hugging Face and place them in your local model directory, then update all script arguments to point to your local model paths:
+
+Llama-2-7b: https://huggingface.co/meta-llama/Llama-2-7b
+
+GPT-2: https://huggingface.co/openai-community/gpt2
+
+Recommended local layout (example):
+
+./models/llama2/
+
+./models/gpt2/
+
+All commands below assume you have downloaded the models to local disk and use the local paths accordingly.
+
+## Setup
 
 1. Install dependencies:
    ```bash

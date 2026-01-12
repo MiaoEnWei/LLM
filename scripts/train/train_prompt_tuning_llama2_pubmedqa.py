@@ -1,8 +1,8 @@
 # scripts/train/train_prompt_tuning_llama2_pubmedqa.py
 # ---------------------------------------------------------
-# LLaMA-2 在 PubMedQA (pqa_labeled) 上的 Prompt Tuning 训练脚本
-# - 使用 4-bit QLoRA + PromptTuning (虚拟 token)
-# - 从本地 parquet 读取 pqa_labeled/train-00000-of-00001.parquet
+# Prompt Tuning training script for LLaMA-2 on PubMedQA (pqa_labeled)
+# - Uses 4-bit QLoRA + PromptTuning (virtual tokens)
+# - Reads pqa_labeled/train-00000-of-00001.parquet from a local parquet file
 # ---------------------------------------------------------
 
 import argparse
@@ -41,7 +41,7 @@ def set_seed(seed: int):
 
 
 # ---------------------------------------------------------
-# 1. CLI 参数
+# 1. CLI arguments
 # ---------------------------------------------------------
 
 def build_args():
@@ -50,72 +50,72 @@ def build_args():
         "--model_name_or_path",
         type=str,
         required=True,
-        help="LLaMA-2 基座模型路径，例如 ./llama2",
+        help="Path to the LLaMA-2 base model, e.g., ./llama2",
     )
     ap.add_argument(
         "--parquet",
         type=str,
         required=True,
-        help="PubMedQA pqa_labeled parquet 文件路径",
+        help="Path to the PubMedQA pqa_labeled parquet file",
     )
     ap.add_argument(
         "--output_dir",
         type=str,
         required=True,
-        help="Prompt Tuning 适配器保存目录，例如 out_llama2_pubmedqa_prompt_tuning",
+        help="Directory to save the Prompt Tuning adapter, e.g., out_llama2_pubmedqa_prompt_tuning",
     )
 
-    # 训练超参
+    # Training hyperparameters
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument(
         "--batch_size",
         type=int,
         default=1,
-        help="LLaMA2-7B + 4bit 通常只能 batch=1",
+        help="With LLaMA2-7B + 4-bit, batch_size is typically limited to 1",
     )
     ap.add_argument(
         "--grad_accum",
         type=int,
         default=16,
-        help="梯度累积步数（有效 batch = batch_size * grad_accum）",
+        help="Gradient accumulation steps (effective batch = batch_size * grad_accum)",
     )
     ap.add_argument(
         "--lr",
         type=float,
         default=2e-4,
-        help="学习率，QLoRA 常用 2e-4 左右",
+        help="Learning rate; ~2e-4 is common for QLoRA",
     )
     ap.add_argument(
         "--num_virtual_tokens",
         type=int,
         default=20,
-        help="Prompt Tuning 的虚拟 token 数量",
+        help="Number of virtual tokens for Prompt Tuning",
     )
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument(
         "--max_train_samples",
         type=int,
         default=5000,
-        help="最多使用多少条样本；0 表示用全部",
+        help="Maximum number of training samples; 0 means use all samples",
     )
     ap.add_argument(
         "--max_ctx_chars",
         type=int,
         default=4000,
-        help="拼接 context 时最多截取多少字符",
+        help="Maximum number of characters to keep when concatenating context",
     )
     return ap.parse_args()
 
 
 # ---------------------------------------------------------
-# 2. PubMedQA 数据处理
+# 2. PubMedQA data processing
 # ---------------------------------------------------------
 
 def join_context(c, max_ctx_chars: int) -> str:
     """
-    PubMedQA pqa_labeled 的 context 是个 dict，大概长这样：
+    In PubMedQA pqa_labeled, context is a dict that looks roughly like:
     {"contexts": ["sentence1", "sentence2", ...]}
-    这里把它拍平成一个长字符串，并截断。
+    This flattens it into a single long string and truncates it.
     """
     try:
         ctxs = (c or {}).get("contexts", [])
@@ -129,8 +129,8 @@ def join_context(c, max_ctx_chars: int) -> str:
 
 def build_instruction_text(example, max_ctx_chars: int):
     """
-    把 question + context + long_answer 变成一条 instruction-style 文本：
-    [系统提示] + Question + Context + Answer
+    Convert question + context + long_answer into a single instruction-style text:
+    [system prompt] + Question + Context + Answer
     """
     q = (example.get("question") or "").strip()
     ctx_raw = example.get("context")
@@ -149,18 +149,18 @@ def build_instruction_text(example, max_ctx_chars: int):
 
 
 # ---------------------------------------------------------
-# 3. 主函数
+# 3. Main
 # ---------------------------------------------------------
 
 def main():
-    # 兼容 Windows / Linux 显存碎片问题
+    # Helps mitigate VRAM fragmentation issues on Windows/Linux
     if "PYTORCH_ALLOC_CONF" not in os.environ and "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
         os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
     args = build_args()
     set_seed(args.seed)
 
-    # 3.1 加载 tokenizer
+    # 3.1 Load tokenizer
     print(f"[train_pubmedqa_llama] Loading tokenizer from {args.model_name_or_path}")
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name_or_path,
@@ -169,20 +169,20 @@ def main():
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    # 对 causal LM + 左填充更友好
+    # Left padding is generally friendlier for causal LM training
     tokenizer.padding_side = "left"
     print("[train_pubmedqa_llama] Tokenizer loaded.")
 
-    # 3.2 读取 parquet -> pandas -> HF Dataset
+    # 3.2 Read parquet -> pandas -> HF Dataset
     print(f"[train_pubmedqa_llama] Loading parquet from {args.parquet}")
     table = pq.read_table(args.parquet)
     df = table.to_pandas()
 
-    # 只保留必要列，并去掉 NA
+    # Keep only required columns and drop NA rows
     cols = ["question", "context", "long_answer"]
     df = df[cols].dropna().reset_index(drop=True)
 
-    # 按参数控制训练样本数
+    # Control the number of training samples
     if args.max_train_samples and args.max_train_samples > 0:
         n = min(args.max_train_samples, len(df))
         df = df.sample(n=n, random_state=args.seed).reset_index(drop=True)
@@ -215,7 +215,7 @@ def main():
     )
     print(f"[train_pubmedqa_llama] Tokenized examples: {len(tokenized_dataset)}")
 
-    # 3.3 加载 LLaMA-2 模型（4-bit QLoRA）
+    # 3.3 Load LLaMA-2 model (4-bit QLoRA)
     print(f"[train_pubmedqa_llama] Loading model from {args.model_name_or_path} (4-bit QLoRA)")
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -235,7 +235,7 @@ def main():
     print("[train_pubmedqa_llama] Preparing model for k-bit training...")
     model = prepare_model_for_kbit_training(model)
 
-    # 3.4 Prompt Tuning 配置
+    # 3.4 Prompt Tuning config
     print("[train_pubmedqa_llama] Setting up Prompt Tuning config...")
     peft_config = PromptTuningConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -252,7 +252,7 @@ def main():
     print("[train_pubmedqa_llama] Prompt Tuning adapter applied.")
     model.print_trainable_parameters()
 
-    # 3.5 训练参数
+    # 3.5 Training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         num_train_epochs=args.epochs,
@@ -262,7 +262,7 @@ def main():
         logging_steps=50,
         save_strategy="epoch",
         fp16=False,
-        bf16=True,  # Ampere 以上用 bf16
+        bf16=True,  # Use bf16 on Ampere+ GPUs
         optim="paged_adamw_8bit",
         report_to="none",
         seed=args.seed,

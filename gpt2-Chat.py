@@ -3,18 +3,19 @@
 
 """
 RAG + Constrained Decoding + Post QA Checks (clean, enhanced)
-- RAG: BM25 检索段落 → 组装 <CONTEXT>
-- 解码约束:
-  * must_include → force_words_ids（不和 DomainLock 混用）
-  * 可选 DomainLock(LogitsProcessor)：仅当显式给 --domain_lock_terms 或启用 --domain_lock_from_context
-- 事后质检:
-  * 关键词重叠(可选)
-  * 数字一致(可选)
-  * 黑名单 forbid_phrases
-  * sequences_scores 选优（多样生成时挑分数最高）
-- 采样/多样性:
-  * 采样: temperature/top_p/top_k + n_samples
-  * 有 must_include 时走 beam，可启用 diverse beam
+- RAG: BM25-retrieve paragraphs -> assemble <CONTEXT>
+- Decoding constraints:
+  * must_include -> force_words_ids (do NOT mix with DomainLock)
+  * Optional DomainLock (LogitsProcessor): enabled only when explicitly providing --domain_lock_terms
+    or enabling --domain_lock_from_context
+- Post-generation QA checks:
+  * Keyword overlap (optional)
+  * Number consistency (optional)
+  * Blacklist forbid_phrases
+  * Select best by sequences_scores (pick highest score when generating multiple candidates)
+- Sampling / diversity:
+  * Sampling: temperature/top_p/top_k + n_samples
+  * If must_include is used, switch to beam search; optional diverse beam
 """
 
 import os, re, sys, glob, argparse, warnings
@@ -23,7 +24,7 @@ from typing import List, Tuple, Optional, Set
 
 warnings.filterwarnings("ignore")
 
-# ---------- 分词 & NLTK 兜底 ----------
+# ---------- Tokenization & NLTK fallback ----------
 def _tokenize(text: str) -> List[str]:
     text = (text or "").lower()
     try:
@@ -35,10 +36,10 @@ def _tokenize(text: str) -> List[str]:
             pass
     except Exception:
         pass
-    # 兜底：正则分词
+    # Fallback: regex tokenization
     return re.findall(r"[A-Za-z0-9_]+", text)
 
-# ---------- 读取与切块 ----------
+# ---------- Read & chunk ----------
 def read_corpus_files(corpus_dir: str, exts=(".txt", ".md")) -> List[Tuple[str, str]]:
     files = []
     for ext in exts:
@@ -57,7 +58,7 @@ def simple_chunks(text: str, max_len=800) -> List[str]:
     chunks, buf, cur = [], [], 0
     for p in paras:
         p = p.strip()
-        if not p: 
+        if not p:
             continue
         if cur + len(p) > max_len and buf:
             chunks.append("\n".join(buf)); buf, cur = [], 0
@@ -68,7 +69,7 @@ def simple_chunks(text: str, max_len=800) -> List[str]:
         if len(c) <= max_len:
             final.append(c)
         else:
-            # 句子级切分兜底
+            # Sentence-level split fallback
             try:
                 import nltk
                 sents = nltk.tokenize.sent_tokenize(c)
@@ -103,13 +104,13 @@ from transformers import (
 )
 
 class DomainLock(LogitsProcessor):
-    """将词表限制到允许子串（行业词干）+ 常用符号"""
+    """Restrict the vocabulary to allowed substrings (domain stems) + common symbols."""
     def __init__(self, tok, allow_subs: List[str]):
         self.allow_subs = [s.strip().lower() for s in allow_subs if s.strip()]
         vocab = tok.get_vocab()
         id2tok = {i: t for t, i in vocab.items()}
         self.allow_ids: Set[int] = set()
-        # 去掉空字符串，保留常用标点/空格/换行
+        # Remove empty strings; keep common punctuation/space/newline
         extra_ok = {" ", ".", ",", ":", ";", "(", ")", "-", "_", "\n", "\"", "'", "%"}
         for tid, piece in id2tok.items():
             try:
@@ -122,14 +123,14 @@ class DomainLock(LogitsProcessor):
                 self.allow_ids.add(tid)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        if not self.allow_ids: 
+        if not self.allow_ids:
             return scores
         mask = torch.full_like(scores, float("-inf"))
         idx = torch.tensor(list(self.allow_ids), device=scores.device, dtype=torch.long)
         mask[:, idx] = 0.0
         return scores + mask
 
-# ---------- 质检 ----------
+# ---------- QA checks ----------
 STOPWORDS = set("""
 a an the this that those these is are was were be being been am do does did doing have has had having of on in at for to from by with without and or nor but so than then as if because while when where which who whom whose about into over under again further just only also very more most such not no yes can could should would may might must will shall
 """.split())
@@ -151,7 +152,7 @@ def numbers_within_context(ans: str, ctx: str) -> bool:
     nums_ctx = set(extract_numbers(ctx or ""))
     return all(n in nums_ctx for n in nums_ans)
 
-# ---------- force_words 构造 ----------
+# ---------- Build force_words ----------
 def build_force_words(tok, terms: List[str]):
     out = []
     for t in terms:
@@ -159,7 +160,7 @@ def build_force_words(tok, terms: List[str]):
         if ids: out.append(ids)
     return out
 
-# ---------- 主流程 ----------
+# ---------- Main pipeline ----------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="gpt2")
@@ -192,7 +193,7 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
-    # 1) 读+切块+索引
+    # 1) Read + chunk + index
     files = read_corpus_files(args.corpus_dir)
     raw_chunks = []
     for fp, txt in files:
@@ -202,11 +203,11 @@ def main():
         raise SystemExit("[Error] No chunks from corpus.")
     bm25, tokenized, chunks = build_bm25(raw_chunks)
 
-    # 2) 检索
+    # 2) Retrieve
     hits = retrieve(bm25, tokenized, chunks, args.question, topk=args.topk)
     ctx = "\n\n".join([c for c,_ in hits])
 
-    # 3) 模型
+    # 3) Model
     local = Path(args.model).exists()
     tok = AutoTokenizer.from_pretrained(args.model, local_files_only=local)
     mdl = AutoModelForCausalLM.from_pretrained(args.model, local_files_only=local)
@@ -216,7 +217,7 @@ def main():
     device = "cuda:0" if ((args.device=="cuda" or args.device=="auto") and torch.cuda.is_available()) else ("cpu" if args.device!="auto" else "cpu")
     mdl.to(device)
 
-    # 4) 压缩 CONTEXT
+    # 4) Compress CONTEXT
     def truncate_to_tokens(s: str, budget: int) -> str:
         ids = tok(s, add_special_tokens=False)["input_ids"]
         if len(ids) <= budget: return s
@@ -237,7 +238,7 @@ A: {args.answer_prefix}"""
 
     inputs = tok(prompt, return_tensors="pt").to(device)
 
-    # 6) 约束：force_words（must_include） + 可选 DomainLock
+    # 6) Constraints: force_words (must_include) + optional DomainLock
     must_terms = [s.strip() for s in args.must_include.split(",") if s.strip()]
     force_words_ids = build_force_words(tok, must_terms) if must_terms else None
 
@@ -246,12 +247,12 @@ A: {args.answer_prefix}"""
         allow_terms = sorted(set(_tokenize(ctx_use)))
     else:
         allow_terms = [s.strip() for s in args.domain_lock_terms.split(",") if s.strip()]
-    # **不要**把 must_terms 合并进 allow_terms，避免锁死词表
+    # Do NOT merge must_terms into allow_terms; that could lock the vocabulary too tightly
     logits_processors = None
     if allow_terms:
         logits_processors = [DomainLock(tok, allow_terms)]
 
-    # 7) 生成参数（采样/beam & 多样性）
+    # 7) Generation parameters (sampling/beam & diversity)
     do_sample = (args.temperature > 0.0) and (force_words_ids is None)
     gen_kwargs = dict(
         max_new_tokens=args.max_new_tokens,
@@ -271,7 +272,7 @@ A: {args.answer_prefix}"""
         if args.n_samples and args.n_samples > 1:
             gen_kwargs["num_return_sequences"] = args.n_samples
 
-    # 使用强制短语 → beam，不采样；支持返回多条 + diverse beam
+    # Forced phrase -> beam search (no sampling); supports multiple returns + diverse beam
     if force_words_ids:
         gen_kwargs.update(dict(
             num_beams=max(4, args.n_samples*2),
@@ -291,9 +292,9 @@ A: {args.answer_prefix}"""
 
     out = mdl.generate(**inputs, **gen_kwargs)
 
-    # 8) 抽取候选 & 选优
+    # 8) Extract candidates & select best
     seqs = out.sequences
-    # 有 sequences_scores 就按分数选优（越大越好）；否则取 0
+    # If sequences_scores exists, pick the best (higher is better); otherwise pick index 0
     pick_idx = 0
     if hasattr(out, "sequences_scores") and out.sequences_scores is not None:
         try:
@@ -306,7 +307,7 @@ A: {args.answer_prefix}"""
     pos = text.rfind("\nA:")
     answer = text[pos+3:].strip() if pos != -1 else text.strip()
 
-    # --- 可选：裁剪到 must 短语 ---
+    # --- Optional: clip to must phrase ---
     if args.clip_to_must and args.must_include and args.answer_prefix:
         must = args.must_include.split(",")[0].strip()
         if must:
@@ -314,7 +315,7 @@ A: {args.answer_prefix}"""
             if must.lower() in al:
                 answer = f"{args.answer_prefix}{must}."
 
-    # --- 清理 & 两句裁剪 ---
+    # --- Cleanup & two-sentence clipping ---
     def _sanitize(txt: str) -> str:
         txt = re.sub(r'0x[0-9A-Fa-f]+', '', txt or '')     # drop hex-like
         txt = re.sub(r'[—–-]{3,}', ' ', txt)               # long dashes
@@ -333,7 +334,7 @@ A: {args.answer_prefix}"""
 
     answer = _clip_two_sentences(_sanitize(answer))
 
-    # 9) 事后质检
+    # 9) Post-generation QA checks
     reasons = []
     forbids = [p.strip().lower() for p in args.forbid_phrases.split(",") if p.strip()]
     al = (answer or "").lower()
